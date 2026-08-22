@@ -12,7 +12,7 @@
       "required": ["id", "name"],
       "additionalProperties": false,
       "properties": {
-        "id": {"type": "string", "description": "slug, e.g. 002030-chokechai"},
+        "id": {"type": "string", "description": "slug, e.g. acme-hq"},
         "name": {"type": "string"},
         "customer": {"type": "string"},
         "address": {"type": "string"},

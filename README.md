@@ -52,7 +52,7 @@ record containing credential material.
 ## Install
 
 ```bash
-git clone https://github.com/<you>/netwalk
+git clone https://github.com/ripmilla/netwalk
 cd netwalk
 python3 install.py
 ```
@@ -72,6 +72,45 @@ python3 ~/.claude/skills/netwalk/toolkit/scripts/netwalk_logos.py fetch    # ven
 python3 ~/.claude/skills/netwalk/toolkit/tests/test_policy.py              # self-test
 python3 install.py --uninstall
 ```
+
+### On an AI agent that is not Claude Code
+
+netwalk is two layers: **plain Python scripts that need no agent at all**, and a set of
+instructions telling an agent how to drive them. Only the second layer is Claude-specific, and
+`AGENTS.md` is the agent-agnostic form of exactly the same instructions. Porting is a one-liner:
+
+```bash
+git clone https://github.com/ripmilla/netwalk && cd /path/to/your/project
+
+python3 /path/to/netwalk/install.py --agent cursor     # .cursor/rules/netwalk.mdc
+python3 /path/to/netwalk/install.py --agent codex      # AGENTS.md
+python3 /path/to/netwalk/install.py --agent gemini     # GEMINI.md
+python3 /path/to/netwalk/install.py --agent cline      # .clinerules/netwalk.md
+python3 /path/to/netwalk/install.py --agent copilot    # .github/copilot-instructions.md
+python3 /path/to/netwalk/install.py --agent windsurf   # .windsurf/rules/netwalk.md
+python3 /path/to/netwalk/install.py --agent continue   # .continue/rules/netwalk.md
+python3 /path/to/netwalk/install.py --agent aider      # CONVENTIONS.md
+python3 /path/to/netwalk/install.py --agent generic    # AGENTS.md, for anything else
+```
+
+| Agent | `--agent` | File it writes |
+|---|---|---|
+| Claude Code | *(default, no flag)* | `~/.claude/skills/netwalk-*/SKILL.md` |
+| OpenAI Codex CLI, OpenCode, Amp, Jules | `codex` / `opencode` / `generic` | `AGENTS.md` |
+| Cursor | `cursor` | `.cursor/rules/netwalk.mdc` |
+| Windsurf | `windsurf` | `.windsurf/rules/netwalk.md` |
+| Cline / Roo Code | `cline` | `.clinerules/netwalk.md` |
+| GitHub Copilot | `copilot` | `.github/copilot-instructions.md` |
+| Gemini CLI | `gemini` | `GEMINI.md` |
+| Continue | `continue` | `.continue/rules/netwalk.md` |
+| Aider | `aider` | `CONVENTIONS.md` |
+
+The absolute path to your clone is substituted in, so every command in the file is copy-pasteable.
+An instruction file that already exists is appended to, never overwritten.
+
+**No agent at all?** Everything works from a terminal — `install.py --check`, then the commands in
+the Quick reference at the top of `AGENTS.md`. The agent's job is to decide *what to run next* as a
+crawl unfolds; the guarantees live in the scripts, not in the agent.
 
 ### Requirements
 
@@ -113,6 +152,10 @@ labels on every link, dashed for anything inferred — and a single self-contain
 opens offline and follows the reader's light/dark setting.
 
 ### Supported gear
+
+Controller-managed estates are read from the controller in one pass rather than device by device:
+**UniFi** (`netwalk_unifi.py`, both the UniFi OS Integration API and the legacy login) and
+**TP-Link Omada** (`netwalk_omada.py`, both the Open API and the older session API).
 
 Read-only command packs ship for **MikroTik RouterOS**, **Cisco IOS / IOS-XE / NX-OS**,
 **ArubaOS-CX**, **HP/HPE ProCurve & Comware**, **FortiOS**, **Junos**, **Linux** (incl. Proxmox,

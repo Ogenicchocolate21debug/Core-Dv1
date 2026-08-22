@@ -75,9 +75,9 @@ KEY_MATERIAL_MARKERS = ("-----BEGIN", "PRIVATE KEY", "ssh-rsa ", "ssh-ed25519 ")
 # secrets, `answers` prints them back.
 ACCESS_FIELDS = [
     ("mgmt_url", "Management URL or address",
-     "https://10.2.30.10:8443  — if it differs from the IP above"),
+     "https://192.0.2.10:8443  — if it differs from the IP above"),
     ("jump_host", "Reach it through (SSH jump host)",
-     "user@10.100.2.30  — leave blank for a direct connection"),
+     "user@192.0.2.1  — leave blank for a direct connection"),
     ("tenant", "Site / tenant / VDOM id",
      "UniFi site id, FortiGate VDOM, controller site name"),
 ]
@@ -404,7 +404,7 @@ def _card(h: dict, existing: dict, asks_for) -> str:
     {field('Enable / secondary password', 'enable_password', '', 'password', when='key+password')}
     {field('API token', 'api_token', '', 'password', when='api')}
   </div>
-  <div class="row">{field('Note (optional)', 'note', 'e.g. read-only account, jumps via 10.0.0.9', when='key password key+password api')}
+  <div class="row">{field('Note (optional)', 'note', 'e.g. read-only account, jumps via 192.0.2.9', when='key password key+password api')}
     {field('Anything you can say about it?', 'note', 'e.g. "was here when we took the site over" — helps the report', when='unknown not-ours')}</div>
   <div class="row">
     {field('What is it?', 'described', 'e.g. Ricoh MP C4504 printer, staff room', when='known-no-cred')}

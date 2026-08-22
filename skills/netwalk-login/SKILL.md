@@ -32,7 +32,7 @@ Every card already carries an **Access details** section (management URL, SSH ju
 site/tenant id). For anything beyond that, attach your own question with `--ask`:
 
 ```bash
---ask 'unifi-ctrl|reach_how|How do you normally reach this controller? URL and port|https://10.2.30.10:8443'
+--ask 'unifi-ctrl|reach_how|How do you normally reach this controller? URL and port|https://192.0.2.10:8443'
 --ask '*|window|When can we reboot, if it comes to that?|'
 ```
 
@@ -69,11 +69,11 @@ and exits. Nothing is transmitted off the machine and nothing passes through you
 
    ```bash
    python3 {{TOOLKIT}}/scripts/netwalk_cred.py serve --site acme-hq \
-     --host 'gw01,192.168.1.1,mikrotik,entry point'
+     --host 'gw01,192.0.2.1,mikrotik,entry point'
 
    # later, mid-crawl, as neighbours turn up:
    python3 {{TOOLKIT}}/scripts/netwalk_cred.py add --site acme-hq \
-     --host 'sw-core,192.168.1.2,cisco,found via LLDP on gw01 ether8' \
+     --host 'sw-core,192.0.2.2,cisco,found via LLDP on gw01 ether8' \
      --ask 'sw-core|why|What does this switch feed?|'
 
    python3 {{TOOLKIT}}/scripts/netwalk_cred.py url  --site acme-hq   # re-share the link
@@ -91,9 +91,9 @@ and exits. Nothing is transmitted off the machine and nothing passes through you
    ```bash
    python3 {{TOOLKIT}}/scripts/netwalk_cred.py request \
      --site acme-hq \
-     --host 'gw01,192.168.1.1,mikrotik,entry point - user has this one' \
-     --host 'sw-core,192.168.1.2,cisco' \
-     --host 'ap-01,192.168.1.11,ubiquiti,found via LLDP'
+     --host 'gw01,192.0.2.1,mikrotik,entry point - user has this one' \
+     --host 'sw-core,192.0.2.2,cisco' \
+     --host 'ap-01,192.0.2.11,ubiquiti,found via LLDP'
    ```
 
    Each `--host` is `id[,ip[,vendor[,note]]]`. The note is shown on the card — use it to remind the
@@ -109,7 +109,7 @@ and exits. Nothing is transmitted off the machine and nothing passes through you
    are fresh on every run. In Claude Code the user can run it inline by prefixing `!`:
 
    ```
-   ! python3 {{TOOLKIT}}/scripts/netwalk_cred.py request --site acme-hq --host 'gw01,192.168.1.1,mikrotik' --timeout 0
+   ! python3 {{TOOLKIT}}/scripts/netwalk_cred.py request --site acme-hq --host 'gw01,192.0.2.1,mikrotik' --timeout 0
    ```
 
    `--timeout 0` waits until they stop it with Ctrl-C. Then continue from step 5 — `list` and

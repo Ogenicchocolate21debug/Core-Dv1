@@ -25,6 +25,23 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent
 RUNTIME = ["scripts", "schema", "assets", "tests", "examples"]
+
+# Where each agent looks for project instructions. netwalk's own logic lives in
+# plain Python, so porting it is only a matter of putting AGENTS.md where the agent
+# will read it - there is no per-agent code anywhere in this repository.
+AGENT_TARGETS = {
+    "claude":     ("Claude Code",        None),                 # native skills, handled below
+    "codex":      ("OpenAI Codex CLI",   "AGENTS.md"),
+    "copilot":    ("GitHub Copilot",     ".github/copilot-instructions.md"),
+    "cursor":     ("Cursor",             ".cursor/rules/netwalk.mdc"),
+    "windsurf":   ("Windsurf",           ".windsurf/rules/netwalk.md"),
+    "cline":      ("Cline / Roo",        ".clinerules/netwalk.md"),
+    "gemini":     ("Gemini CLI",         "GEMINI.md"),
+    "aider":      ("Aider",              "CONVENTIONS.md"),
+    "opencode":   ("OpenCode",           "AGENTS.md"),
+    "continue":   ("Continue",           ".continue/rules/netwalk.md"),
+    "generic":    ("anything reading AGENTS.md", "AGENTS.md"),
+}
 SKILLS = ["netwalk", "netwalk-login", "netwalk-scan", "netwalk-diag",
           "netwalk-map", "netwalk-fullreport"]
 TOOLKIT_SUBDIR = Path("netwalk") / "toolkit"
@@ -53,6 +70,32 @@ def copy_runtime(dest: Path) -> None:
     # deleted and rewritten on every upgrade; scan records live under
     # $NETWALK_HOME/sites (default ~/.netwalk/sites) precisely so an upgrade
     # cannot take a customer's scan history with it.
+
+
+def install_for_agent(agent: str, project: Path) -> int:
+    """Write netwalk's instructions where a non-Claude agent will read them."""
+    label, target = AGENT_TARGETS[agent]
+    src = REPO / "AGENTS.md"
+    if not src.exists():
+        print(f"AGENTS.md is missing from {REPO}", file=sys.stderr)
+        return 1
+    text = src.read_text(encoding="utf-8").replace("<TOOLKIT>", str(REPO))
+    dest = project / target
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if dest.name.endswith(".mdc"):          # Cursor wants front matter
+        text = ("---\ndescription: netwalk - read-only network survey toolkit\n"
+                "alwaysApply: false\n---\n\n") + text
+    if dest.exists() and dest.stat().st_size and "netwalk" not in dest.read_text(encoding="utf-8"):
+        # never clobber instructions the project already had
+        dest.write_text(dest.read_text(encoding="utf-8").rstrip() + "\n\n" + text, encoding="utf-8")
+        print(f"appended netwalk's instructions to the existing {dest}")
+    else:
+        dest.write_text(text, encoding="utf-8")
+        print(f"wrote {dest}")
+    print(f"  {label} will pick these up in this project.")
+    print(f"  toolkit path baked in: {REPO}")
+    print(f"\nCheck the environment:  python3 {REPO / 'install.py'} --check")
+    return 0
 
 
 def install(skills_dir: Path) -> int:
@@ -120,7 +163,14 @@ def main() -> int:
     ap.add_argument("--skills-dir", type=Path, default=None)
     ap.add_argument("--uninstall", action="store_true")
     ap.add_argument("--check", action="store_true", help="environment report only")
+    ap.add_argument("--agent", choices=sorted(AGENT_TARGETS),
+                    help="install for a non-Claude agent by writing its instruction file")
+    ap.add_argument("--project", type=Path, default=Path.cwd(),
+                    help="project directory for --agent (default: the current directory)")
     args = ap.parse_args()
+
+    if args.agent and args.agent != "claude":
+        return install_for_agent(args.agent, args.project.expanduser().resolve())
 
     if args.check:
         sys.path.insert(0, str(REPO / "scripts"))

@@ -18,27 +18,27 @@ import netwalk_omada as O  # noqa: E402
 
 # Open API (controller 5.x) device shape
 OPENAPI = [
-    {"name": "SW-CORE", "mac": "AA-BB-CC-00-00-01", "ip": "10.1.1.2", "type": "switch",
+    {"name": "SW-CORE", "mac": "AA-BB-CC-00-00-01", "ip": "192.0.2.2", "type": "switch",
      "model": "TL-SG3428MP", "firmwareVersion": "1.2.3", "status": 11, "uptimeLong": 950400,
      "cpuUtil": 17, "memUtil": 42, "poeRemain": 250,
      "ports": [{"port": 1, "name": "to AP1", "portStatus": {"linkStatus": 1, "linkSpeed": 1000}},
                {"port": 2, "portStatus": {"linkStatus": 0}}]},
-    {"name": "AP-1", "mac": "AA-BB-CC-00-00-02", "ip": "10.1.1.11", "type": "ap",
+    {"name": "AP-1", "mac": "AA-BB-CC-00-00-02", "ip": "192.0.2.11", "type": "ap",
      "model": "EAP670", "firmwareVersion": "1.0.11", "status": 11,
      "uplinkMac": "AA-BB-CC-00-00-01", "cpuUtil": 8, "memUtil": 55},
-    {"name": "AP-2", "mac": "AA-BB-CC-00-00-03", "ip": "10.1.1.12", "type": "ap",
+    {"name": "AP-2", "mac": "AA-BB-CC-00-00-03", "ip": "192.0.2.12", "type": "ap",
      "model": "EAP225", "firmwareVersion": "5.1.0", "status": 0,
      "uplinkDeviceName": "SW-CORE"},
-    {"name": "GW-1", "mac": "AA-BB-CC-00-00-04", "ip": "10.1.1.1", "type": "gateway",
+    {"name": "GW-1", "mac": "AA-BB-CC-00-00-04", "ip": "192.0.2.1", "type": "gateway",
      "model": "ER605", "firmwareVersion": "2.2.4", "status": 11},
     {"name": "MYSTERY", "mac": "AA-BB-CC-00-00-05", "type": "somethingelse", "status": 11},
 ]
 
 # older /api/v2 device shape
 V2 = [
-    {"name": "SW-OLD", "mac": "aa-bb-cc-11-11-01", "ip": "10.2.2.2", "type": "switch",
+    {"name": "SW-OLD", "mac": "aa-bb-cc-11-11-01", "ip": "192.0.2.2", "type": "switch",
      "showModel": "T1600G-28TS", "version": "1.0.5", "status": "CONNECTED", "uptime": "3d 4h"},
-    {"name": "AP-OLD", "mac": "aa-bb-cc-11-11-02", "ip": "10.2.2.3", "type": "ap",
+    {"name": "AP-OLD", "mac": "aa-bb-cc-11-11-02", "ip": "192.0.2.3", "type": "ap",
      "deviceModel": "EAP245", "swVersion": "3.9.0", "status": "CONNECTED",
      "uplinkDeviceMac": "aa-bb-cc-11-11-01"},
 ]
@@ -113,9 +113,9 @@ def main() -> int:
             pass          # no server to talk to; only the guard matters here
 
     # an SSH port stored by the login form must not be used as a controller port
-    check(22 not in O.Omada({"ip": "10.0.0.1", "port": 22}).candidates,
+    check(22 not in O.Omada({"ip": "192.0.2.1", "port": 22}).candidates,
           "port 22 leaked through as a controller port")
-    check(O.Omada({"ip": "10.0.0.1", "mgmt_url": "omada.example.com:8043"}).base
+    check(O.Omada({"ip": "192.0.2.1", "mgmt_url": "omada.example.com:8043"}).base
           == "https://omada.example.com:8043", "mgmt_url not honoured")
 
     total = 22

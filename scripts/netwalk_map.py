@@ -368,7 +368,17 @@ def build_layout(record: dict, orient: str = "lr") -> tuple[list[dict], list[dic
 def group_node_svg(dev: dict, x: float, y: float) -> str:
     n = dev.get("_count", 0)
     off = dev.get("_offline", 0)
-    rng = (f'{dev["_ip_from"]} \u2192 {dev["_ip_to"]}' if dev.get("_ip_from") else "no IP recorded")
+    # "198.51.100.1 -> .20" is how an engineer writes a range, and unlike the long
+    # form it still fits the box - which matters, because the range is the whole
+    # point of collapsing twenty access points into one node.
+    a, b = dev.get("_ip_from"), dev.get("_ip_to")
+    if a and b:
+        pa, pb = a.rsplit(".", 1), b.rsplit(".", 1)
+        rng = f"{a} \u2192 " + (f".{pb[1]}" if pa[0] == pb[0] else b)
+    elif a:
+        rng = a
+    else:
+        rng = "no IP recorded"
     if dev.get("_no_ip"):
         rng += f'  (+{dev["_no_ip"]} with no IP)'
     parts = [f'<g class="node group" transform="translate({x:.1f},{y:.1f})">',

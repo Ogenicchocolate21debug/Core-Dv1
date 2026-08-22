@@ -26,7 +26,7 @@ ROOT = HERE.parent
 CRED = ROOT / "scripts" / "netwalk_cred.py"
 SITE = "netwalk-selftest-receiver"
 
-BROWSER_BODY = {"hosts": {"r1": {"ip": "10.0.0.1", "vendor": "mikrotik", "method": "password",
+BROWSER_BODY = {"hosts": {"r1": {"ip": "192.0.2.1", "vendor": "mikrotik", "method": "password",
                                  "port": "22", "username": "u", "password": "correct-horse"}}}
 
 
@@ -35,7 +35,7 @@ def start(extra: list[str] | None = None) -> tuple[subprocess.Popen, str, int]:
     env["NETWALK_HOME"] = str(HERE / ".tmp-netwalk-home")
     p = subprocess.Popen(
         [sys.executable, str(CRED), "request", "--site", SITE,
-         "--host", "r1,10.0.0.1,mikrotik", "--timeout", "20", "--no-open",
+         "--host", "r1,192.0.2.1,mikrotik", "--timeout", "20", "--no-open",
          *(extra or [])],
         stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=env, text=True)
     for _ in range(100):
@@ -146,7 +146,7 @@ def _(url, port):
 
 @case("pasted private key material is refused with an explanation")
 def _(url, port):
-    body = {"hosts": {"r1": {"ip": "10.0.0.1", "method": "key",
+    body = {"hosts": {"r1": {"ip": "192.0.2.1", "method": "key",
                              "key_path": "-----BEGIN OPENSSH PRIVATE KEY-----\nabc"}}}
     code, resp = post(f"{url}/save", body, {"Origin": f"http://127.0.0.1:{port}"})
     assert code == 400 and "key material" in str(resp), f"{code} {resp}"
@@ -186,19 +186,19 @@ def _(url, port):
     assert "When is the maintenance window?" in body, "form-wide question not rendered"
     payload = dict(BROWSER_BODY)
     payload["hosts"] = {"r1": {**BROWSER_BODY["hosts"]["r1"],
-                               "answers": {"reach_how": "https://10.2.30.10:8443", "window": "Sundays"}}}
+                               "answers": {"reach_how": "https://192.0.2.10:8443", "window": "Sundays"}}}
     code, resp = post(f"{url}/save", payload, {"Origin": f"http://127.0.0.1:{port}"})
     assert code == 200, f"{code} {resp}"
     data = json.loads(Path(resp["path"]).read_text())
     ans = data["hosts"]["r1"]["answers"]
-    assert ans["reach_how"] == "https://10.2.30.10:8443" and ans["window"] == "Sundays", ans
+    assert ans["reach_how"] == "https://192.0.2.10:8443" and ans["window"] == "Sundays", ans
 
 
 @case("access detail fields are stored and readable, secrets stay unreadable")
 def _(url, port):
     payload = {"hosts": {"r1": {**BROWSER_BODY["hosts"]["r1"],
-                                "mgmt_url": "https://10.2.30.10:8443",
-                                "jump_host": "admin@10.100.2.30", "tenant": "default"}}}
+                                "mgmt_url": "https://192.0.2.10:8443",
+                                "jump_host": "admin@192.0.2.1", "tenant": "default"}}}
     code, body = post(f"{url}/save", payload, {"Origin": f"http://127.0.0.1:{port}"})
     assert code == 200, f"{code} {body}"
     env = dict(os.environ)
@@ -206,7 +206,7 @@ def _(url, port):
     out = subprocess.run([sys.executable, str(CRED), "answers", "--site", SITE],
                          capture_output=True, text=True, env=env)
     both = out.stdout + out.stderr
-    for want in ("https://10.2.30.10:8443", "admin@10.100.2.30", "default"):
+    for want in ("https://192.0.2.10:8443", "admin@192.0.2.1", "default"):
         assert want in both, f"answers did not print {want}: {both}"
     assert "correct-horse" not in both, "answers leaked the password"
 
@@ -229,7 +229,7 @@ def _(url, port):
 
 @case("Skip does not delete a credential the host already had")
 def _(url, port):
-    good = {"hosts": {"keepme": {"ip": "10.0.0.2", "vendor": "mikrotik", "method": "password",
+    good = {"hosts": {"keepme": {"ip": "192.0.2.2", "vendor": "mikrotik", "method": "password",
                                  "username": "u", "password": "keep-this"}}}
     code, body = post(f"{url}/save", good, {"Origin": f"http://127.0.0.1:{port}"})
     assert code == 200, f"{code} {body}"
@@ -249,7 +249,7 @@ def _(url, port):
 
 @case("\"I don't know what this is\" is stored as a real answer")
 def _(url, port):
-    payload = {"hosts": {"mystery-box": {"method": "unknown", "ip": "10.0.0.44",
+    payload = {"hosts": {"mystery-box": {"method": "unknown", "ip": "192.0.2.44",
                                          "vendor": "unknown",
                                          "note": "was here when we took the site over"}}}
     code, body = post(f"{url}/save", payload, {"Origin": f"http://127.0.0.1:{port}"})
@@ -264,7 +264,7 @@ def _(url, port):
 @case("\"I know what it is, no login\" documents the device without a credential")
 def _(url, port):
     payload = {"hosts": {"the-printer": {
-        "method": "known-no-cred", "ip": "10.0.0.60", "vendor": "unknown",
+        "method": "known-no-cred", "ip": "192.0.2.60", "vendor": "unknown",
         "described": "Ricoh MP C4504 in the staff room", "role_hint": "printer",
         "purpose": "staff printing and scan-to-email", "owner": "the copier contractor"}}}
     code, body = post(f"{url}/save", payload, {"Origin": f"http://127.0.0.1:{port}"})
@@ -297,7 +297,7 @@ def _(url, port):
 
 @case("\"not ours\" is stored and the exec wrapper refuses to connect")
 def _(url, port):
-    payload = {"hosts": {"landlord-router": {"method": "not-ours", "ip": "10.0.0.45",
+    payload = {"hosts": {"landlord-router": {"method": "not-ours", "ip": "192.0.2.45",
                                              "vendor": "unknown",
                                              "note": "belongs to the building"}}}
     code, body = post(f"{url}/save", payload, {"Origin": f"http://127.0.0.1:{port}"})
@@ -314,7 +314,7 @@ def _(url, port):
 
 @case("the form marks which devices are new this round")
 def _(url, port):
-    proc, url, port = start(["--host", "brand-new-switch,10.0.0.99,cisco", "--round", "3"])
+    proc, url, port = start(["--host", "brand-new-switch,192.0.2.99,cisco", "--round", "3"])
     code, body = get(url)
     assert code == 200, code
     assert "NEW this round" in body, "new-device badge missing"
@@ -337,7 +337,7 @@ def _(url, port):
     assert r.returncode == 0, r.stderr
     doc = out_file.read_text()
     assert "correct-horse" not in doc, "the default export leaked a password"
-    assert "10.0.0.1" in doc and "values not in this file" in doc, doc[:400]
+    assert "192.0.2.1" in doc and "values not in this file" in doc, doc[:400]
     if os.name != "nt":
         assert oct(out_file.stat().st_mode)[-3:] == "600", oct(out_file.stat().st_mode)
 

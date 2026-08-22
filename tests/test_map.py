@@ -13,17 +13,18 @@ import netwalk_map as M  # noqa: E402
 
 def synthetic(n_aps=20, n_switches=3):
     devs = [{"host_id": "gw", "role": "gateway", "vendor": "mikrotik",
-             "mgmt_ip": "10.0.0.1", "reachable": True}]
+             "mgmt_ip": "192.0.2.1", "reachable": True}]
     edges = []
     for si in range(n_switches):
         sid = f"sw{si}"
         devs.append({"host_id": sid, "role": "switch", "vendor": "ubiquiti",
-                     "mgmt_ip": f"10.0.0.{10+si}", "reachable": True})
+                     "mgmt_ip": f"192.0.2.{10 + si}", "reachable": True})
         edges.append({"a_host": "gw", "b_host": sid, "discovered_via": "lldp"})
         for ai in range(n_aps):
             aid = f"{sid}-ap{ai}"
             devs.append({"host_id": aid, "role": "ap", "vendor": "ubiquiti",
-                         "model": "AC LR", "mgmt_ip": f"10.0.{si+1}.{ai+1}",
+                         # RFC 5737 documentation space, like every other example here
+                         "model": "AC LR", "mgmt_ip": f"198.51.100.{si * 40 + ai + 1}",
                          "reachable": ai % 7 != 0})
             edges.append({"a_host": sid, "b_host": aid, "discovered_via": "controller"})
     return {"site": {"id": "t", "name": "T"}, "devices": devs, "topology_edges": edges}
@@ -42,7 +43,7 @@ def main() -> int:
     g = gnodes[0] if gnodes else {}
     if g.get("_count") != 20:
         fails.append(f"group count wrong: {g.get('_count')}")
-    if g.get("_ip_from") != "10.0.1.1" or g.get("_ip_to") != "10.0.1.20":
+    if g.get("_ip_from") != "198.51.100.1" or g.get("_ip_to") != "198.51.100.20":
         fails.append(f"IP range wrong: {g.get('_ip_from')} -> {g.get('_ip_to')}")
     if g.get("_offline") != 3:
         fails.append(f"offline count wrong: {g.get('_offline')} (expected 3)")
@@ -85,11 +86,11 @@ def main() -> int:
     # WAN boxes carry the operator's mark, and an unknown operator still gets something
     wanrec = synthetic(n_aps=2, n_switches=1)
     wanrec["wan_links"] = [
-        {"isp": "3BB", "on_host": "gw", "ip": "1.1.1.1/32", "link_speed": "1G"},
-        {"isp": "AIS Fibre", "on_host": "gw", "ip": "2.2.2.2/32"},
-        {"isp": "Some Local ISP", "on_host": "gw", "ip": "3.3.3.3/32"},
-        {"isp": "True", "on_host": "gw", "ip": "4.4.4.4/32"},
-        {"isp": "Symphony", "on_host": "gw", "ip": "5.5.5.5/32"},
+        {"isp": "3BB", "on_host": "gw", "ip": "192.0.2.11/32", "link_speed": "1G"},
+        {"isp": "AIS Fibre", "on_host": "gw", "ip": "203.0.113.2/32"},
+        {"isp": "Some Local ISP", "on_host": "gw", "ip": "203.0.113.3/32"},
+        {"isp": "True", "on_host": "gw", "ip": "203.0.113.44/32"},
+        {"isp": "Symphony", "on_host": "gw", "ip": "203.0.113.5/32"},
     ]
     wsvg = M.render(wanrec)
     if M.isp_key("AIS Fibre") != "isp-ais":
@@ -104,7 +105,8 @@ def main() -> int:
         fails.append(f"canvas {wh:.0f}px is shorter than the {need:.0f}px WAN column")
 
     svg = M.render(rec)
-    for want in ("AP GROUP", "20 access points", "10.0.1.1", "10.0.1.20"):
+    # the range is shortened where the prefix repeats, and must still fit the box
+    for want in ("AP GROUP", "20 access points", "198.51.100.1 \u2192 .20"):
         if want not in svg:
             fails.append(f"the group node does not show {want!r}")
 
