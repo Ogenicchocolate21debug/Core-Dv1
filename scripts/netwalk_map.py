@@ -20,7 +20,7 @@ import json
 import os
 import re
 import sys
-from collections import defaultdict, deque
+from collections import Counter, defaultdict, deque
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 LOGO_DIR = os.path.join(os.path.dirname(HERE), "assets", "logos")
@@ -33,6 +33,7 @@ PAD = 40
 WAN_W, WAN_H = 200, 78
 
 ROLE_RANK = {
+    "ap-group": 3,
     "gateway": 0, "router": 0, "firewall": 0,
     "l3-switch": 1, "controller": 1,
     "switch": 2, "unmanaged-switch": 2,
@@ -40,6 +41,7 @@ ROLE_RANK = {
     "printer": 4, "ups": 4, "client": 4, "unknown": 4,
 }
 ROLE_LABEL = {
+    "ap-group": "AP GROUP",
     "gateway": "GATEWAY", "router": "ROUTER", "firewall": "FIREWALL",
     "l3-switch": "L3 SWITCH", "switch": "SWITCH", "unmanaged-switch": "UNMANAGED?",
     "ap": "AP", "controller": "CONTROLLER", "server": "SERVER", "nas": "NAS",
@@ -108,6 +110,73 @@ def logo_group(vendor: str | None, x: float, y: float, size: int = 26) -> str:
 
 
 # ------------------------------------------------------------------ layout
+
+def _ip_key(ip: str):
+    try:
+        return tuple(int(x) for x in str(ip).split("/")[0].split("."))
+    except (ValueError, AttributeError):
+        return (999, 999, 999, 999)
+
+
+def group_aps(record: dict, minimum: int = 2) -> dict:
+    """Collapse the access points hanging off one switch into a single node.
+
+    A school with 112 APs draws 112 boxes and a comb of 112 lines, which is accurate
+    and unreadable. What an engineer actually wants from the picture is: this switch
+    feeds this many APs, in this address range. The per-device detail is still in the
+    report's inventory table - only the diagram groups them.
+    """
+    devices = {d["host_id"]: d for d in record.get("devices", []) if d.get("host_id")}
+    edges = [e for e in record.get("topology_edges", []) if e.get("a_host") and e.get("b_host")]
+    touching = defaultdict(list)
+    for e in edges:
+        touching[e["a_host"]].append(e)
+        touching[e["b_host"]].append(e)
+
+    groups: dict[str, list[dict]] = defaultdict(list)
+    for hid, d in devices.items():
+        if d.get("role") != "ap":
+            continue
+        es = touching.get(hid, [])
+        if len(es) != 1:          # an AP with a mesh uplink or none stays on its own
+            continue
+        e = es[0]
+        parent = e["b_host"] if e["a_host"] == hid else e["a_host"]
+        if devices.get(parent, {}).get("role") not in ("switch", "l3-switch", "gateway", "router"):
+            continue
+        groups[parent].append(d)
+    groups = {k: v for k, v in groups.items() if len(v) >= minimum}
+    if not groups:
+        return record
+
+    grouped_ids = {d["host_id"] for members in groups.values() for d in members}
+    out = dict(record)
+    out["devices"] = [d for d in record["devices"] if d.get("host_id") not in grouped_ids]
+    out["topology_edges"] = [e for e in edges
+                             if e["a_host"] not in grouped_ids and e["b_host"] not in grouped_ids]
+
+    for parent, members in sorted(groups.items()):
+        members.sort(key=lambda d: _ip_key(d.get("mgmt_ip")))
+        with_ip = [d for d in members if d.get("mgmt_ip")]
+        offline = [d for d in members if not d.get("reachable", True)]
+        models = Counter(d.get("model") or "unknown" for d in members)
+        gid = f"AP group on {parent}"
+        out["devices"].append({
+            "host_id": gid, "hostname": f"{len(members)} access points",
+            "vendor": (members[0].get("vendor") or "unknown"),
+            "role": "ap-group", "reachable": len(offline) < len(members),
+            "_count": len(members),
+            "_ip_from": with_ip[0]["mgmt_ip"] if with_ip else None,
+            "_ip_to": with_ip[-1]["mgmt_ip"] if with_ip else None,
+            "_no_ip": len(members) - len(with_ip),
+            "_offline": len(offline),
+            "_models": ", ".join(f"{n}x {m}" for m, n in models.most_common(3)),
+        })
+        out["topology_edges"].append({"a_host": parent, "b_host": gid,
+                                      "discovered_via": "controller",
+                                      "note": f"{len(members)} APs"})
+    return out
+
 
 def build_layout(record: dict) -> tuple[list[dict], list[dict], dict]:
     devices = [d for d in record.get("devices", []) if d.get("host_id")]
@@ -184,7 +253,39 @@ def build_layout(record: dict) -> tuple[list[dict], list[dict], dict]:
 
 # ------------------------------------------------------------------ drawing
 
+def group_node_svg(dev: dict, x: float, y: float) -> str:
+    n = dev.get("_count", 0)
+    off = dev.get("_offline", 0)
+    rng = (f'{dev["_ip_from"]} \u2192 {dev["_ip_to"]}' if dev.get("_ip_from") else "no IP recorded")
+    if dev.get("_no_ip"):
+        rng += f'  (+{dev["_no_ip"]} with no IP)'
+    parts = [f'<g class="node group" transform="translate({x:.1f},{y:.1f})">',
+             f'<rect class="stackback" x="6" y="-6" width="{NODE_W}" height="{NODE_H}" rx="10"/>',
+             f'<rect class="stackback2" x="3" y="-3" width="{NODE_W}" height="{NODE_H}" rx="10"/>',
+             f'<rect class="box" width="{NODE_W}" height="{NODE_H}" rx="10"/>',
+             logo_group(dev.get("vendor"), 12, 12, 26),
+             f'<text class="hostname" x="48" y="26">{n} access points</text>',
+             f'<text class="role" x="{NODE_W - 12}" y="17">AP GROUP</text>',
+             f'<text class="ip" x="12" y="46">{esc(fit(rng, 12, NODE_W - 24, mono=True))}</text>',
+             f'<text class="model" x="12" y="62">{esc(fit(dev.get("_models") or "", 11, NODE_W - 24))}</text>']
+    chips = [("UP", str(n - off), False)]
+    if off:
+        chips.append(("DOWN", str(off), True))
+    cx = 12
+    for label, val, hot in chips:
+        w = 18 + 7.1 * len(label) + 7.8 * len(val)
+        parts.append(f'<g class="chip{" hot" if hot else ""}" transform="translate({cx:.1f},70)">'
+                     f'<rect width="{w:.1f}" height="18" rx="5"/>'
+                     f'<text x="7" y="13">{esc(label)}</text>'
+                     f'<text class="v" x="{w - 7:.1f}" y="13">{esc(val)}</text></g>')
+        cx += w + 6
+    parts.append("</g>")
+    return "".join(parts)
+
+
 def node_svg(dev: dict, x: float, y: float, public: bool) -> str:
+    if dev.get("role") == "ap-group":
+        return group_node_svg(dev, x, y)
     hid = dev.get("hostname") or dev.get("host_id")
     role = dev.get("role", "unknown")
     unreachable = not dev.get("reachable", True)
@@ -232,7 +333,7 @@ def node_svg(dev: dict, x: float, y: float, public: bool) -> str:
     else:
         cx = 12
         for label, val, hot in chips[:4]:
-            w = 14 + 6.3 * len(label) + 7.2 * len(val)
+            w = 18 + 7.1 * len(label) + 7.8 * len(val)
             parts.append(f'<g class="chip{" hot" if hot else ""}" transform="translate({cx:.1f},68)">'
                          f'<rect width="{w:.1f}" height="18" rx="5"/>'
                          f'<text x="7" y="13">{esc(label)}</text>'
@@ -367,6 +468,9 @@ CSS = """
 .chip text.v{font:600 10px var(--nw-mono);fill:var(--nw-ink);text-anchor:end}
 .chip.hot rect{fill:var(--nw-badbg)}
 .chip.hot text,.chip.hot text.v{fill:var(--nw-bad)}
+.group .box{stroke:var(--nw-accent)}
+.stackback{fill:var(--nw-card);stroke:var(--nw-line);stroke-width:1.2;opacity:.55}
+.stackback2{fill:var(--nw-card);stroke:var(--nw-line);stroke-width:1.2;opacity:.8}
 .logo{fill:var(--nw-logo)}
 .logo-fallback{fill:var(--nw-chip)}
 .logo-initial{font:600 14px var(--nw-sans);fill:var(--nw-muted);text-anchor:middle}
@@ -392,13 +496,17 @@ TOKENS_DARK = """--nw-bg:#0f1216;--nw-card:#171c22;--nw-line:#2a323c;--nw-line-s
 --nw-bad:#ff7b6b;--nw-badbg:#3a1f1c;--nw-wan:#13202f;--nw-logo:#b6c2d0"""
 
 
-def render(record: dict, public: bool = False, title: str | None = None, standalone: bool = True) -> str:
+def render(record: dict, public: bool = False, title: str | None = None,
+           standalone: bool = True, group: bool = True) -> str:
     """standalone=True -> a .svg file. standalone=False -> an <svg> to paste into a page.
 
     Either way the theme tokens ride along, scoped to `.netwalk-map`, because an
     embedded diagram whose tokens stayed behind renders as a black rectangle - the
     kind of bug that only shows up in the artefact you actually hand over.
     """
+    total_devices = len(record.get("devices", []))
+    if group:
+        record = group_aps(record)
     devices, edges, geom = build_layout(record)
     site = record.get("site", {})
     heading = title or f"{site.get('name') or site.get('id') or 'network'}"
@@ -443,11 +551,14 @@ def main() -> int:
     ap.add_argument("-o", "--out", required=True)
     ap.add_argument("--public", action="store_true", help="omit scan date and other internal detail")
     ap.add_argument("--title")
+    ap.add_argument("--no-group-aps", dest="group", action="store_false",
+                    help="draw every access point separately instead of grouping them per switch")
+    ap.set_defaults(group=True)
     args = ap.parse_args()
 
     with open(args.record, encoding="utf-8") as fh:
         record = json.load(fh)
-    svg = render(record, public=args.public, title=args.title)
+    svg = render(record, public=args.public, title=args.title, group=args.group)
     with open(args.out, "w", encoding="utf-8") as fh:
         fh.write(svg)
     n = len(record.get("devices", []))

@@ -23,6 +23,7 @@ import os
 import secrets
 import sys
 import time
+import urllib.parse
 import webbrowser
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -73,6 +74,59 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
 
 
+def sessions_dir() -> Path:
+    d = C.netwalk_home() / "sessions"
+    d.mkdir(parents=True, exist_ok=True)
+    C.harden_path(d, is_dir=True)
+    return d
+
+
+def session_file(site: str) -> Path:
+    return sessions_dir() / f"{C.slugify(site)}.session.json"
+
+
+def hosts_file(site: str) -> Path:
+    return sessions_dir() / f"{C.slugify(site)}.hosts.json"
+
+
+def load_hosts_state(site: str) -> dict:
+    p = hosts_file(site)
+    if not p.exists():
+        return {"version": 0, "hosts": [], "asks": []}
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {"version": 0, "hosts": [], "asks": []}
+
+
+def save_hosts_state(site: str, state: dict) -> None:
+    C.write_private(hosts_file(site), json.dumps(state, indent=2))
+
+
+def parse_hosts(specs: list[str]) -> list[dict]:
+    out = []
+    for spec in specs:
+        parts = (spec.split(",") + ["", "", ""])[:4]
+        hid = parts[0].strip()
+        if not hid:
+            raise SystemExit(f"netwalk_cred: bad --host {spec!r} (want id[,ip[,vendor[,note]]])")
+        out.append({"id": hid, "ip": parts[1].strip(),
+                    "vendor": (parts[2].strip() or "unknown").lower(), "note": parts[3].strip()})
+    return out
+
+
+def parse_asks(specs: list[str]) -> list[dict]:
+    out = []
+    for spec in specs:
+        parts = (spec.split("|") + ["", "", ""])[:4]
+        if not parts[1].strip():
+            raise SystemExit(f"netwalk_cred: bad --ask {spec!r} (want HOST|key|Label|placeholder)")
+        out.append({"host": parts[0].strip() or "*", "key": parts[1].strip(),
+                    "label": parts[2].strip() or parts[1].strip(),
+                    "placeholder": parts[3].strip()})
+    return out
+
+
 def vault_path(site: str) -> Path:
     return C.creds_dir() / f"{C.slugify(site)}.json"
 
@@ -118,6 +172,16 @@ input,select{width:100%;padding:8px 10px;border:1px solid var(--line);border-rad
 background:var(--bg);color:var(--ink);font:14px ui-monospace,SFMono-Regular,Menlo,monospace}
 input:focus,select:focus{outline:2px solid var(--accent);outline-offset:-1px}
 .hidden{display:none}
+.live{display:flex;gap:10px;align-items:flex-start;background:var(--card);
+border:1px solid var(--ok);border-radius:10px;padding:11px 14px;margin:0 0 16px;font-size:13.5px}
+.live .dot{width:9px;height:9px;border-radius:50%;background:var(--ok);flex:0 0 9px;margin-top:5px;
+animation:pulse 2s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.toast{max-height:0;overflow:hidden;opacity:0;transition:.35s;background:var(--accent);color:#fff;
+border-radius:9px;font-size:13.5px;font-weight:600;margin:0 0 0}
+.toast.show{max-height:60px;opacity:1;padding:10px 14px;margin:0 0 14px}
+.cardstate{font:600 11.5px var(--sans);color:var(--muted);margin-top:8px;min-height:14px}
+.cardstate.ok{color:var(--ok)}
 .badge{font:600 10.5px var(--sans);padding:2px 7px;border-radius:99px;vertical-align:2px}
 .badge.done{background:var(--okbg,#e9f7ef);color:var(--ok)}
 .badge.new{background:var(--accent);color:#fff}
@@ -139,65 +203,116 @@ button:disabled{opacity:.5;cursor:default}
 """
 
 FORM_JS = """
-var PORT_FOR={key:'22',password:'22','key+password':'22',api:'8443'};
 function sync(el){
   var card=el.closest('.host'), m=el.value;
   var pf=card.querySelector('[name=port]');
-  if(pf){ pf.placeholder=PORT_FOR[m]||'22';
-    if(!pf.dataset.touched) pf.value=''; }
+  if(pf){ pf.placeholder=PORT_FOR[m]||'22'; if(!pf.dataset.touched) pf.value=''; }
   card.querySelectorAll('[data-when]').forEach(function(f){
     var show=f.dataset.when.split(' ').indexOf(m)>=0;
     f.classList.toggle('hidden',!show);
     f.querySelectorAll('input').forEach(function(i){i.disabled=!show});
   });
 }
-document.querySelectorAll('[name=port]').forEach(function(p){
-  p.addEventListener('input',function(){p.dataset.touched='1'});
-});
-document.querySelectorAll('select[name=method]').forEach(function(s){sync(s);s.addEventListener('change',function(){sync(s)})});
-document.getElementById('f').addEventListener('submit',function(e){
-  e.preventDefault();
+var PORT_FOR={key:'22',password:'22','key+password':'22',api:'8443'};
+
+function wire(card){
+  card.querySelectorAll('[name=port]').forEach(function(p){
+    p.addEventListener('input',function(){p.dataset.touched='1'});
+  });
+  card.querySelectorAll('input,select').forEach(function(el){
+    el.addEventListener('input',function(){card.dataset.dirty='1';mark(card,'')});
+    el.addEventListener('change',function(){card.dataset.dirty='1';mark(card,'')});
+  });
+  var sel=card.querySelector('select[name=method]');
+  if(sel){ sync(sel); sel.addEventListener('change',function(){sync(sel)}); }
+}
+function mark(card,txt,cls){
+  var el=card.querySelector('.cardstate');
+  if(el){ el.textContent=txt||''; el.className='cardstate '+(cls||''); }
+}
+document.querySelectorAll('.host').forEach(wire);
+
+function collect(all){
   var out={}, bad=null;
   document.querySelectorAll('.host').forEach(function(c){
-    var id=c.dataset.host, g=function(n){var el=c.querySelector('[name='+n+']');return el&&!el.disabled?el.value.trim():''};
+    var id=c.dataset.host;
+    var g=function(n){var el=c.querySelector('[name='+n+']');return el&&!el.disabled?el.value.trim():''};
     var m=g('method');
-    var skipAns={};
-    c.querySelectorAll('[name^="ask::"]').forEach(function(el){
-      if(el.value.trim()) skipAns[el.name.slice(5)]=el.value.trim();
-    });
-    if(m==='skip'||m==='unknown'||m==='not-ours'){
-      out[id]={method:m,ip:c.dataset.ip,vendor:c.dataset.vendor,
-               note:(c.querySelector('[name=note]:not([disabled])')||{}).value||'',
-               answers:skipAns};
-      return;
-    }
-    var kp=g('key_path');
-    if(/-----BEGIN|PRIVATE KEY/.test(kp)) bad='"'+id+'": paste the PATH to the key file, not the key itself.';
+    // only send what the user actually touched, so a re-save never re-transmits a
+    // credential that is already stored and never wipes one with a blank field
+    if(!all && c.dataset.dirty!=='1') return;
+    if(!m) return;
     var ans={};
     c.querySelectorAll('[name^="ask::"]').forEach(function(el){
       if(el.value.trim()) ans[el.name.slice(5)]=el.value.trim();
     });
+    if(m==='skip'||m==='unknown'||m==='not-ours'){
+      out[id]={method:m,ip:c.dataset.ip,vendor:c.dataset.vendor,
+               note:(c.querySelector('[name=note]:not([disabled])')||{}).value||'',answers:ans};
+      return;
+    }
+    var kp=g('key_path');
+    if(/-----BEGIN|PRIVATE KEY/.test(kp)) bad='"'+id+'": paste the PATH to the key file, not the key itself.';
     out[id]={ip:c.dataset.ip,vendor:c.dataset.vendor,method:m,
       port:g('port')||(m==='api'?'8443':'22'),
       username:g('username'),password:g('password'),key_path:kp,
       enable_password:g('enable_password'),api_token:g('api_token'),note:g('note'),
       mgmt_url:g('mgmt_url'),jump_host:g('jump_host'),tenant:g('tenant'),answers:ans};
   });
-  var st=document.getElementById('status');
-  if(bad){st.className='err';st.textContent=bad;return}
-  if(!Object.keys(out).length){st.className='err';st.textContent='Nothing to save - every device is set to Skip and no question was answered.';return}
-  st.className='';st.textContent='Saving...';
+  return {out:out,bad:bad};
+}
+
+document.getElementById('f').addEventListener('submit',function(e){
+  e.preventDefault();
+  var st=document.getElementById('status'), r=collect(false);
+  if(r.bad){st.className='err';st.textContent=r.bad;return}
+  var ids=Object.keys(r.out);
+  if(!ids.length){st.className='';st.textContent='Nothing new to save - fill something in first.';return}
+  st.className='';st.textContent='Saving '+ids.length+' device(s)...';
   document.getElementById('go').disabled=true;
-  fetch(SAVE_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({hosts:out})})
+  fetch(SAVE_URL,{method:'POST',headers:{'Content-Type':'application/json'},
+                  body:JSON.stringify({hosts:r.out})})
+    .then(function(x){return x.json()})
+    .then(function(j){
+      document.getElementById('go').disabled=false;
+      if(!j.ok){st.className='err';st.textContent=j.error||'Save failed';return}
+      st.className='ok';st.textContent='Saved '+j.count+' device(s). Leave this tab open - the scan will add more as it finds them.';
+      ids.forEach(function(id){
+        var c=document.querySelector('.host[data-host="'+id+'"]');
+        if(c){c.dataset.dirty='0';c.dataset.saved='1';c.classList.remove('isnew');
+              mark(c,'saved','ok');}
+      });
+    })
+    .catch(function(){document.getElementById('go').disabled=false;
+      st.className='err';st.textContent='Could not reach the local receiver. It may have been stopped.';});
+});
+
+// The scan keeps running while this page is open. Poll for devices it finds and
+// append them, never re-rendering a card the user might be typing into.
+var VERSION=INITIAL_VERSION;
+function poll(){
+  fetch(STATE_URL+'?since='+VERSION,{headers:{'Accept':'application/json'}})
     .then(function(r){return r.json()})
     .then(function(j){
-      if(j.ok){st.className='ok';st.textContent='Saved '+j.count+' device(s) to '+j.path+' (0600). You can close this tab.';
-        document.getElementById('f').querySelectorAll('input,select').forEach(function(i){i.disabled=true});}
-      else{st.className='err';st.textContent=j.error||'Save failed';document.getElementById('go').disabled=false}
+      if(!j || j.version===VERSION) return;
+      VERSION=j.version;
+      var added=0, list=document.getElementById('cards');
+      (j.cards||[]).forEach(function(c){
+        if(document.querySelector('.host[data-host="'+c.host+'"]')) return;
+        var tmp=document.createElement('div'); tmp.innerHTML=c.html;
+        var el=tmp.firstElementChild;
+        list.appendChild(el); wire(el); added++;
+      });
+      if(added){
+        var n=document.getElementById('newcount');
+        n.textContent=added+' new device'+(added>1?'s':'')+' found by the scan just now';
+        n.className='toast show';
+        setTimeout(function(){n.className='toast'},9000);
+      }
     })
-    .catch(function(){st.className='err';st.textContent='Could not reach the local receiver - it may have timed out. Re-run /netwalk-login.';
-      document.getElementById('go').disabled=false});
-});
+    .catch(function(){});
+}
+setInterval(poll,4000);
 """
 
 
@@ -211,7 +326,8 @@ def field(label: str, name: str, placeholder: str = "", type_: str = "text", whe
 
 
 def render_form(site: str, hosts: list[dict], save_url: str, existing: dict,
-                asks: list[dict] | None = None, rnd: int = 0) -> str:
+                asks: list[dict] | None = None, rnd: int = 0, version: int = 1,
+                state_url: str = "", persistent: bool = False) -> str:
     asks = asks or []
     round_note = f" &middot; crawl round {rnd}" if rnd else ""
 
@@ -227,8 +343,15 @@ def render_form(site: str, hosts: list[dict], save_url: str, existing: dict,
         return (f'<div class="asks"><p class="askhead">The assistant needs to know:</p>'
                 f'<div class="row">{rows}</div></div>')
 
-    cards = []
-    for h in hosts:
+    cards = [_card(h, existing, asks_for) for h in hosts]
+    return page_html(site, hosts, save_url, existing, cards, round_note,
+                     version, state_url, persistent)
+
+
+def _card(h: dict, existing: dict, asks_for) -> str:
+    """One device card. Rendered on its own so the server can inject cards the crawl
+    discovers later, without reloading a page the user may be typing into."""
+    if True:
         hid = h["id"]
         known = existing.get(hid, {})
         if known:
@@ -243,7 +366,7 @@ def render_form(site: str, hosts: list[dict], save_url: str, existing: dict,
             f'<option value="{v}"{" selected" if known.get("method") == v else ""}>{html.escape(t)}</option>'
             for v, t in METHODS
         )
-        cards.append(f"""
+        return (f"""
 <div class="host{'' if known else ' isnew'}" data-host="{html.escape(hid)}" data-ip="{html.escape(h.get('ip',''))}" data-vendor="{html.escape(h.get('vendor','unknown'))}">
   <h2>{html.escape(hid)}{badge}</h2>
   <p class="meta">{html.escape(h.get('ip','no IP'))} &middot; {html.escape(h.get('vendor','unknown'))}
@@ -265,27 +388,42 @@ def render_form(site: str, hosts: list[dict], save_url: str, existing: dict,
     <div class="row">{''.join(field(lbl, k, ph) for k, lbl, ph in ACCESS_FIELDS)}</div>
   </details>
   {asks_for(hid)}
+  <div class="cardstate"></div>
 </div>""")
 
+
+def page_html(site, hosts, save_url, existing, cards, round_note,
+              version=1, state_url="", persistent=False) -> str:
+    live = ("""<div class="live"><span class="dot"></span>This page stays open for the whole survey.
+Fill in what you know, press Save, and leave the tab up &mdash; as the scan finds more devices they
+appear here on their own and you can add them whenever you like. Save as many times as you want;
+only the cards you changed are sent.</div>"""
+            if persistent else
+            """<p class="sub">This receiver stops as soon as you save.</p>""")
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="no-referrer">
 <title>netwalk-login &middot; {html.escape(site)}</title><style>{FORM_CSS}</style></head><body>
 <div class="wrap">
 <h1>netwalk-login</h1>
-<p class="sub">Site <b>{html.escape(site)}</b>{round_note} &middot; {len(hosts)} device(s) on this page,
-{sum(1 for h in hosts if h["id"] not in existing)} of them new</p>
+<p class="sub">Site <b>{html.escape(site)}</b>{round_note} &middot; <span id="count">{len(hosts)}</span> device(s),
+{sum(1 for h in hosts if h["id"] not in existing)} of them not yet answered</p>
+{live}
 <div class="note"><b>This page is served from your own machine (127.0.0.1) and nothing leaves it.</b>
 What you type here is written straight to a 0600 file under <code>~/.netwalk/creds/</code>.
 It is never sent to the chat, never written into a scan record, and never included in a report.
-Give a <i>path</i> to your SSH key &mdash; never paste the key itself. This receiver stops as soon as you save.
+Give a <i>path</i> to your SSH key &mdash; never paste the key itself.
 <br><br>If you do not recognise a device, say so with <b>&ldquo;I don&rsquo;t know what this is&rdquo;</b> rather
 than leaving it blank &mdash; an unidentified device on the network is a finding, and a blank card just looks
 like an unanswered question. Anything you mark <b>Not ours</b> will not be logged into at all.</div>
-<form id="f">{''.join(cards)}
+<div id="newcount" class="toast"></div>
+<form id="f"><div id="cards">{''.join(cards)}</div>
 <div class="bar"><button id="go" type="submit">Save credentials</button><span id="status"></span></div>
 </form></div>
-<script>var SAVE_URL={json.dumps(save_url)};{FORM_JS}</script></body></html>"""
+<script>var SAVE_URL={json.dumps(save_url)};
+var STATE_URL={json.dumps(state_url or save_url.replace("/save", "/state"))};
+var INITIAL_VERSION={int(version)};
+{FORM_JS}</script></body></html>"""
 
 
 # --------------------------------------------------------------------------- server
@@ -299,6 +437,9 @@ class Receiver(BaseHTTPRequestHandler):
     existing: dict = {}
     asks: list[dict] = []
     rnd: int = 0
+    version: int = 1
+    persistent: bool = False
+    saves: int = 0
     result: dict | None = None
 
     def log_message(self, fmt, *a):  # noqa: A003 - the URL carries the token; never log it
@@ -324,12 +465,53 @@ class Receiver(BaseHTTPRequestHandler):
         return {f"http://127.0.0.1:{port}", f"http://localhost:{port}",
                 f"http://[::1]:{port}"}
 
+    def _refresh(self):
+        """Re-read what the crawl has discovered. `add` writes the file, the server
+        never has to be restarted, and the URL the user has open stays valid."""
+        cls = type(self)
+        if not cls.persistent:
+            return
+        st = load_hosts_state(cls.site)
+        cls.hosts = st.get("hosts", cls.hosts)
+        cls.asks = st.get("asks", cls.asks)
+        cls.version = st.get("version", cls.version)
+        cls.existing = load_vault(cls.site).get("hosts", {})
+
     def do_GET(self):  # noqa: N802
+        cls = type(self)
+        if not self._authorised() and not self.path.rstrip("/").startswith(f"/{cls.token}/"):
+            return self._send(404, b"not found", "text/plain")
+        self._refresh()
+        if self.path.split("?")[0].rstrip("/") == f"/{cls.token}/state":
+            q = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+            try:
+                since = int((q.get("since") or ["0"])[0])
+            except ValueError:
+                since = 0
+            if since >= cls.version:
+                return self._json(200, {"version": cls.version, "cards": []})
+
+            def asks_for(hid):
+                mine = [a for a in cls.asks if a["host"] in (hid, "*")]
+                if not mine:
+                    return ""
+                rows = "".join(
+                    f'<div class="f"><label>{html.escape(a["label"])}</label>'
+                    f'<input type="text" name="ask::{html.escape(a["key"])}" '
+                    f'placeholder="{html.escape(a.get("placeholder", ""))}" '
+                    f'autocomplete="off" spellcheck="false"></div>' for a in mine)
+                return (f'<div class="asks"><p class="askhead">The assistant needs to know:'
+                        f'</p><div class="row">{rows}</div></div>')
+
+            cards = [{"host": h["id"], "html": _card(h, cls.existing, asks_for)}
+                     for h in cls.hosts]
+            return self._json(200, {"version": cls.version, "cards": cards})
+
         if not self._authorised():
             return self._send(404, b"not found", "text/plain")
-        page = render_form(type(self).site, type(self).hosts,
-                           f"/{type(self).token}/save", type(self).existing,
-                           type(self).asks, type(self).rnd)
+        page = render_form(cls.site, cls.hosts, f"/{cls.token}/save", cls.existing,
+                           cls.asks, cls.rnd, version=cls.version,
+                           state_url=f"/{cls.token}/state", persistent=cls.persistent)
         self._send(200, page.encode(), "text/html; charset=utf-8")
 
     def do_POST(self):  # noqa: N802
@@ -414,9 +596,15 @@ class Receiver(BaseHTTPRequestHandler):
             return self._json(400, {"ok": False, "error": "nothing to store"})
         vault["updated_at"] = now_iso()
         path, ok, how = write_vault(cls.site, vault)
+        cls.saves += 1
+        cls.existing = vault.get("hosts", {})
         cls.result = {"count": count, "path": str(path), "perm_ok": ok, "perm": how}
+        print(f"[{now_iso()}] saved {count} device(s) (submission #{cls.saves})",
+              file=sys.stderr, flush=True)
         self._json(200, {"ok": True, "count": count, "path": str(path),
                          "perm_ok": ok, "perm": how})
+        if cls.persistent:
+            cls.result = None      # keep serving; the page stays usable
 
 
 def cmd_request(args: argparse.Namespace) -> int:
@@ -486,6 +674,121 @@ def cmd_request(args: argparse.Namespace) -> int:
               "Treat it as readable by anyone with local access, and run "
               "`netwalk_cred.py forget --site <site>` as soon as the job is done.",
               file=sys.stderr)
+    return 0
+
+
+def cmd_serve(args: argparse.Namespace) -> int:
+    """Serve the form for the whole survey instead of for one submission.
+
+    A crawl finds devices over minutes, and the person answering wants to fill in what
+    they know now and come back to the rest. So the listener stays up, the URL stays
+    valid, `add` pushes newly discovered devices into the page while it is open, and
+    Save can be pressed as many times as the user likes.
+    """
+    state = load_hosts_state(args.site)
+    new = parse_hosts(args.host)
+    known = {h["id"] for h in state["hosts"]}
+    state["hosts"] += [h for h in new if h["id"] not in known]
+    seen = {(a["host"], a["key"]) for a in state["asks"]}
+    state["asks"] += [a for a in parse_asks(args.ask) if (a["host"], a["key"]) not in seen]
+    state["version"] = state.get("version", 0) + 1
+    if not state["hosts"]:
+        raise SystemExit("netwalk_cred: serve needs at least one --host to start with")
+    save_hosts_state(args.site, state)
+
+    Receiver.token = secrets.token_urlsafe(24)
+    Receiver.site = args.site
+    Receiver.hosts = state["hosts"]
+    Receiver.asks = state["asks"]
+    Receiver.existing = load_vault(args.site).get("hosts", {})
+    Receiver.version = state["version"]
+    Receiver.rnd = args.round
+    Receiver.persistent = True
+
+    httpd = ThreadingHTTPServer(("127.0.0.1", args.port), Receiver)
+    httpd.timeout = 1
+    port = httpd.server_address[1]
+    url = f"http://127.0.0.1:{port}/{Receiver.token}"
+    C.write_private(session_file(args.site), json.dumps(
+        {"url": url, "port": port, "pid": os.getpid(), "started_at": now_iso()}, indent=2))
+
+    print(f"NETWALK_LOGIN_URL {url}", flush=True)
+    print(f"serving {len(state['hosts'])} device(s) for site={args.site}. The page stays open; "
+          f"run `netwalk_cred.py add --site {args.site} --host ...` to push new devices into it. "
+          f"Ctrl-C to stop.", file=sys.stderr, flush=True)
+    if not args.no_open:
+        try:
+            webbrowser.open(url)
+        except Exception:  # noqa: BLE001
+            pass
+
+    try:
+        while True:
+            httpd.handle_request()
+    except KeyboardInterrupt:
+        print(f"\nstopped after {Receiver.saves} submission(s)", file=sys.stderr)
+    finally:
+        httpd.server_close()
+        session_file(args.site).unlink(missing_ok=True)
+    return 0
+
+
+def cmd_add(args: argparse.Namespace) -> int:
+    """Push newly discovered devices into a form that is already open."""
+    state = load_hosts_state(args.site)
+    known = {h["id"] for h in state["hosts"]}
+    fresh = [h for h in parse_hosts(args.host) if h["id"] not in known]
+    seen = {(a["host"], a["key"]) for a in state["asks"]}
+    new_asks = [a for a in parse_asks(args.ask) if (a["host"], a["key"]) not in seen]
+    if not fresh and not new_asks:
+        print("nothing new to add - every device and question is already on the form")
+        return 0
+    state["hosts"] += fresh
+    state["asks"] += new_asks
+    state["version"] = state.get("version", 0) + 1
+    save_hosts_state(args.site, state)
+
+    sf = session_file(args.site)
+    where = ""
+    if sf.exists():
+        try:
+            where = json.loads(sf.read_text(encoding="utf-8")).get("url", "")
+        except json.JSONDecodeError:
+            where = ""
+    print(f"added {len(fresh)} device(s) and {len(new_asks)} question(s); "
+          f"the open form picks them up within a few seconds")
+    if where:
+        print(f"form: {where}")
+    else:
+        print("no form is currently serving this site - start one with "
+              f"`netwalk_cred.py serve --site {args.site} --host ...`", file=sys.stderr)
+    return 0
+
+
+def cmd_url(args: argparse.Namespace) -> int:
+    sf = session_file(args.site)
+    if not sf.exists():
+        print(f"no form is serving site {args.site!r}")
+        return 1
+    info = json.loads(sf.read_text(encoding="utf-8"))
+    print(info.get("url", ""))
+    return 0
+
+
+def cmd_stop(args: argparse.Namespace) -> int:
+    sf = session_file(args.site)
+    if not sf.exists():
+        print(f"no form is serving site {args.site!r}")
+        return 1
+    info = json.loads(sf.read_text(encoding="utf-8"))
+    pid = info.get("pid")
+    try:
+        os.kill(int(pid), 15)
+        print(f"stopped the form for {args.site} (pid {pid})")
+    except (OSError, TypeError, ValueError) as e:
+        print(f"could not stop pid {pid}: {e}", file=sys.stderr)
+        return 1
+    sf.unlink(missing_ok=True)
     return 0
 
 
@@ -614,6 +917,30 @@ def main() -> int:
                    help="put a question on the form instead of asking in the chat. "
                         "HOST is a host id or * for every card. Repeatable.")
     r.set_defaults(func=cmd_request)
+
+    sv = sub.add_parser("serve", help="serve the form for the whole survey and keep it open")
+    sv.add_argument("--site", required=True)
+    sv.add_argument("--host", action="append", default=[],
+                    metavar="id[,ip[,vendor[,note]]]")
+    sv.add_argument("--ask", action="append", default=[], metavar="HOST|key|Label|placeholder")
+    sv.add_argument("--port", type=int, default=0)
+    sv.add_argument("--round", type=int, default=0)
+    sv.add_argument("--no-open", action="store_true")
+    sv.set_defaults(func=cmd_serve)
+
+    ad = sub.add_parser("add", help="push newly discovered devices into the open form")
+    ad.add_argument("--site", required=True)
+    ad.add_argument("--host", action="append", default=[], metavar="id[,ip[,vendor[,note]]]")
+    ad.add_argument("--ask", action="append", default=[], metavar="HOST|key|Label|placeholder")
+    ad.set_defaults(func=cmd_add)
+
+    u = sub.add_parser("url", help="print the URL of the form currently serving this site")
+    u.add_argument("--site", required=True)
+    u.set_defaults(func=cmd_url)
+
+    sp = sub.add_parser("stop", help="stop the form serving this site")
+    sp.add_argument("--site", required=True)
+    sp.set_defaults(func=cmd_stop)
 
     k = sub.add_parser("set-key", help="register a KEY-ONLY credential from the CLI "
                                        "(no password option, by design)")

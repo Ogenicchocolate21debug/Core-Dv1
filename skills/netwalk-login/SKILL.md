@@ -59,7 +59,34 @@ and exits. Nothing is transmitted off the machine and nothing passes through you
    netwalk keys off it. Reuse the existing slug if the site has been scanned before; running the
    form again updates devices in place and leaves the rest alone.
 
-3. **Serve the form:**
+3. **Serve the form — and leave it up for the whole survey.**
+
+   `serve` keeps the page alive instead of exiting on the first submit. The user fills in what they
+   know now, presses Save, and leaves the tab open; as the crawl finds more devices you push them
+   into the same page with `add`, and they appear within a few seconds without the URL changing.
+   Only the cards the user actually edited are re-sent, so saving again never re-transmits a
+   credential that is already stored.
+
+   ```bash
+   python3 {{TOOLKIT}}/scripts/netwalk_cred.py serve --site acme-hq \
+     --host 'gw01,192.168.1.1,mikrotik,entry point'
+
+   # later, mid-crawl, as neighbours turn up:
+   python3 {{TOOLKIT}}/scripts/netwalk_cred.py add --site acme-hq \
+     --host 'sw-core,192.168.1.2,cisco,found via LLDP on gw01 ether8' \
+     --ask 'sw-core|why|What does this switch feed?|'
+
+   python3 {{TOOLKIT}}/scripts/netwalk_cred.py url  --site acme-hq   # re-share the link
+   python3 {{TOOLKIT}}/scripts/netwalk_cred.py stop --site acme-hq   # when the survey is done
+   ```
+
+   Start `serve` once, at the beginning. Do not stop and restart it to add a device — the URL is
+   regenerated every time and the user loses the tab they had open.
+
+   The one-shot form is still there as `request` for a single question, but `serve` is the default
+   for a survey.
+
+4. **Or, for a single question, serve it once:**
 
    ```bash
    python3 {{TOOLKIT}}/scripts/netwalk_cred.py request \
@@ -89,19 +116,19 @@ and exits. Nothing is transmitted off the machine and nothing passes through you
    `probe` tell you it worked without you ever seeing a value. Run it yourself only when the user
    is clearly at the keyboard and expecting it right now.
 
-4. **Wait.** It exits by itself on save. On success it prints `SAVED n host(s)` and the protection
+5. **Wait.** `request` exits by itself on save; `serve` keeps going. On success it prints `SAVED n host(s)` and the protection
    that was applied. If it prints a `WARNING` that the file could not be locked down (a Windows box
    with no `icacls`, an exotic filesystem), pass that warning on to the user verbatim — do not
    quietly accept it — and offer to `forget` the store as soon as the survey is finished.
 
-5. **Confirm without looking.** `list` prints which hosts have which *kind* of credential and never
+6. **Confirm without looking.** `list` prints which hosts have which *kind* of credential and never
    a value:
 
    ```bash
    python3 {{TOOLKIT}}/scripts/netwalk_cred.py list --site acme-hq
    ```
 
-6. **Read the non-secret answers back:**
+7. **Read the non-secret answers back:**
 
    ```bash
    python3 {{TOOLKIT}}/scripts/netwalk_cred.py answers --site acme-hq
@@ -110,7 +137,7 @@ and exits. Nothing is transmitted off the machine and nothing passes through you
    This prints IP, port, vendor, username, management URL, jump host, tenant and every question
    answer. It is the one command in this skill you are meant to read the output of.
 
-7. **Prove each login works before handing back to the scan:**
+8. **Prove each login works before handing back to the scan:**
 
    ```bash
    python3 {{TOOLKIT}}/scripts/netwalk_exec.py probe --site acme-hq --host gw01

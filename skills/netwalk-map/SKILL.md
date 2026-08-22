@@ -45,6 +45,18 @@ site diff cleanly and a changed diagram means a changed network.
 Chips turn red past CPU 80%, RAM 85%, storage 85%, 65 °C — so an overloaded box is visible in the
 picture, not just in a table.
 
+## Access points are grouped per switch
+
+A site with a hundred APs draws a hundred boxes and a comb of a hundred lines: accurate, unreadable,
+and not what anyone opens a diagram for. Every AP whose only uplink is one switch is collapsed into
+a single node on that switch showing **how many APs, the address range they occupy, the model mix,
+and how many are up versus down**. The per-device detail is still in the report's inventory table —
+only the picture groups them.
+
+An AP with more than one uplink (a mesh AP, or one with a second cable) is never collapsed: its
+extra link is exactly the thing a diagram exists to show. Pass `--no-group-aps` to draw every access
+point separately.
+
 ## Conventions worth keeping
 
 - **One box per internet uplink.** Primary and backup are separate boxes with ISP, IP and speed.

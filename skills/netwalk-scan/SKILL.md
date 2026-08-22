@@ -54,7 +54,10 @@ scan a device  ──►  new neighbours discovered
       └──────  read the answers back (answers) ──┘   log into what you were given
 ```
 
-Run the form once per round with **every** device discovered in that round, not one at a time.
+Start `netwalk_cred.py serve` once at the beginning and leave it running for the whole survey. Each
+round, push that round's discoveries into the open page with `add` — the user keeps one tab, keeps
+one URL, and fills things in at their own pace while the crawl carries on. Never stop and restart
+the form to add a device: the URL changes and the user loses the page they had open.
 Cards the user has already answered are marked as such and carry their previous answer; new ones
 are badged **NEW this round**. Pass `--round N` so the header says which pass this is.
 
