@@ -1,0 +1,19 @@
+# netwalk security pack - generic Linux server (read-only)
+# Run with --out where a file may contain keys.
+cat /etc/os-release
+cat /etc/ssh/sshd_config
+cat /etc/login.defs
+cat /etc/passwd
+cat /etc/group
+cat /etc/sudoers
+cat /etc/hosts.allow
+cat /etc/hosts.deny
+ss -tulpn
+iptables -S
+nft list ruleset
+systemctl list-unit-files --state=enabled
+systemctl list-units --type=service --state=running
+timedatectl
+crontab -l
+lastlog
+last -n 50

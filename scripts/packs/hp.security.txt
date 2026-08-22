@@ -1,0 +1,18 @@
+# netwalk security pack - HP/HPE ProCurve & Comware (read-only)
+# Run with --out: the running-config contains SNMP communities and password hashes.
+show running-config
+show version
+show snmp-server
+show telnet
+show ip ssh
+show web-management
+show authentication
+show port-security
+show loop-protect
+show dhcp-snooping
+show arp protect
+show spanning-tree bpdu-protection
+show time
+show logging
+show banner motd
+show vlans

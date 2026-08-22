@@ -1,0 +1,17 @@
+# netwalk security pack - FortiOS (read-only)
+# Run with --out: the full configuration contains PSKs, certificates and password hashes.
+get system status
+show full-configuration
+show system global
+show system admin
+show system interface
+show system snmp sysinfo
+show system snmp community
+show system ntp
+show log setting
+show system password-policy
+show user radius
+show firewall policy
+show vpn ipsec phase1-interface
+get system ha status
+diagnose hardware sysinfo conserve

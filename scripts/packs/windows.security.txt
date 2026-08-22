@@ -1,0 +1,12 @@
+# netwalk security pack - Windows (read-only)
+systeminfo
+Get-LocalUser
+Get-LocalGroupMember -Group Administrators
+Get-NetFirewallProfile
+Get-SmbServerConfiguration
+Get-Service
+Get-HotFix
+Get-WindowsFeature
+Get-ExecutionPolicy
+Get-TlsCipherSuite
+query user

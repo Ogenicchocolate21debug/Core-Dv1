@@ -1,0 +1,23 @@
+# netwalk security pack - ArubaOS-CX (read-only)
+# Run with --out: the running-config contains SNMP communities and password hashes.
+show running-config
+show version
+show user-group
+show aaa authentication
+show aaa accounting
+show snmp-server
+show snmpv3 users
+show ssh server
+show https-server
+show telnet
+show ntp status
+show ntp servers
+show logging persistent-storage
+show banner
+show port-access clients
+show spanning-tree
+show spanning-tree bpdu-guard
+show dhcp-snooping
+show arp inspection
+show vlan
+show interface brief

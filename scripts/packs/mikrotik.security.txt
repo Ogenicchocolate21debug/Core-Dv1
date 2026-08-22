@@ -1,0 +1,40 @@
+# netwalk security pack - MikroTik RouterOS (read-only)
+# Run this with --out: several of these print community strings and key material.
+#   netwalk_exec.py run --site S --host H --cmd-file mikrotik.security.txt --out configs/H.security.txt
+# Then let netwalk_audit.py read the file. Nothing here changes anything.
+/ip service print detail
+/ip firewall filter print detail
+/ip firewall nat print detail
+/ip firewall address-list print detail
+/ip firewall connection tracking print
+/user print detail
+/user group print detail
+/user aaa print
+/user active print
+/snmp print
+/snmp community print detail
+/ip neighbor discovery-settings print
+/tool mac-server print
+/tool mac-server mac-winbox print
+/tool mac-server ping print
+/tool romon print
+/tool bandwidth-server print
+/ip socks print
+/ip upnp print
+/ip proxy print
+/ip dns print
+/ip cloud print
+/ip ssh print
+/system ntp client print
+/system clock print
+/system logging print
+/system logging action print
+/system package print
+/system package update print
+/system scheduler print detail
+/system script print detail
+/system note print
+/certificate print detail
+/interface wireless print detail
+/interface wifi print detail
+/ip dhcp-server network print detail

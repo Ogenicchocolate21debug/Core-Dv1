@@ -1,0 +1,30 @@
+# netwalk security pack - Cisco IOS / IOS-XE (read-only)
+# Run this with --out: the running-config sections below contain community strings,
+# password hashes and key material.
+terminal length 0
+show version
+show running-config
+show running-config | include ^service|^no service
+show running-config | include ^enable
+show running-config | include ^username
+show running-config | include ^aaa|^no aaa
+show running-config | include ^snmp-server
+show running-config | include ^ip http|^no ip http
+show running-config | include ^logging|^ntp
+show running-config | include ^banner
+show running-config | include ^ip domain|^crypto key
+show running-config | include ^spanning-tree
+show running-config | include dhcp snooping|arp inspection|ip verify source
+show running-config | include ^vtp
+show running-config | begin ^line con|^line vty|^line aux
+show ip ssh
+show users
+show vtp status
+show port-security
+show spanning-tree inconsistentports
+show ip access-lists
+show ip interface brief
+show interfaces status
+show cdp
+show ntp status
+show logging | include Trap|host

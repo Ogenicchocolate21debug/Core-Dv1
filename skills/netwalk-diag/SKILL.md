@@ -34,8 +34,19 @@ python3 $T/scripts/netwalk_exec.py run --site acme-hq --host gw01 \
 ```
 
 Packs: `mikrotik`, `cisco`, `aruba`, `hp`, `fortinet`, `linux`, `windows`, each with a
-`.config.txt` and a `.health.txt`. Record the exported config path in `config_export_path` —
-relative to the site folder, never pasted into the report.
+`.config.txt`, a `.health.txt` and a `.security.txt`. Record the exported config path in
+`config_export_path` — relative to the site folder, never pasted into the report.
+
+Run the security pack too, and run it with `--out` — it deliberately pulls the parts of the
+configuration that hold community strings and key material, so its output must land on disk
+rather than in the conversation:
+
+```bash
+python3 $T/scripts/netwalk_exec.py run --site acme-hq --host gw01 \
+  --cmd-file $T/scripts/packs/mikrotik.security.txt \
+  --out ~/.netwalk/sites/acme-hq/configs/gw01.security.txt \
+  --evidence ~/.netwalk/sites/acme-hq/evidence.jsonl
+```
 
 **Always use `--out` for a config export.** With `--out` the full text is written straight to a
 0600 file and only a one-line summary is printed. Without it, the whole config comes back through
@@ -87,11 +98,45 @@ Read the numbers before reaching for a story:
 - **Do not invent severity.** `critical` = it is broken or actively unsafe now. `high` = it will
   break or is exploitable. `medium` = real risk, not urgent. `low`/`info` = hygiene.
 
-Security observations belong here too — management services answering on a WAN interface, default
-or shared accounts, SNMP v1/v2c with a guessable community, an open or WEP SSID, a guest network
-with no client isolation, unsupported firmware with known CVEs. Record them as findings with
-`category: "security"`; mark anything you would not want in a customer-facing copy
-`public_safe: false`.
+## 2b. Hardening — run the catalogue, do not rely on remembering
+
+Health is about what is broken. Hardening is about what is configured against the vendor's own
+advice, and it is not left to memory: `netwalk_audit.py` holds the checklist as data, so the same
+checks run on every site whether or not anyone thought of them.
+
+```bash
+python3 $T/scripts/netwalk_audit.py guide --vendor mikrotik      # the checklist itself
+python3 $T/scripts/netwalk_audit.py run --site acme-hq \
+  --record ~/.netwalk/sites/acme-hq/scan-2026-08-22.json --dry-run
+```
+
+`run` reads the config exports **off the disk** and writes findings into `findings[]`. The config
+text never passes through you; the excerpt attached to each finding is one line, redacted. Drop
+`--dry-run` to write.
+
+Three things about the output matter more than the findings themselves:
+
+- **`NOT CHECKED` is part of the result.** A device with no export on disk, a check whose command is
+  missing from the pack output, and every manual item are all listed by name and written into
+  `coverage.not_covered`. Repeat them in the report. A hardening section that shows six findings and
+  hides that ten checks never ran is worse than no hardening section.
+- **A `config_absent` check is `confidence: "suspected"`.** It fires on the *absence* of a line, and
+  absence can mean "not configured" or "not in the part of the config we pulled". Read it before
+  you put it in front of a customer.
+- **Every finding is `public_safe: false` by default.** A hardening list is a route map. Promote one
+  to the public copy only deliberately.
+
+The catalogue does not replace judgement. Anything you spot that it has no check for still belongs
+in `findings[]` with `category: "security"` — and if it is a class of problem rather than a one-off,
+add a check to `netwalk_audit.py`, run `python3 $T/tests/test_audit.py`, and it is closed for every
+future site instead of just this one.
+
+### The baseline
+
+Checks come from the vendor's own hardening guidance plus what actually goes wrong on sites, and
+each check names the guidance it came from. Where a vendor publishes no guidance worth citing, the
+check says it is common practice rather than dressing itself up as a standard.
+
 
 ## 3. Write findings into the record
 
