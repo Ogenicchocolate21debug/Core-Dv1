@@ -22,6 +22,11 @@ python3 $T/scripts/netwalk_report.py $R -o ~/.netwalk/sites/acme-hq/report-publi
 One self-contained HTML file: diagram, CSS and all. No external requests, so it works offline, over
 email, and from a USB stick. It follows the reader's light/dark setting and prints sensibly.
 
+**The diagram is embedded at full size, not scaled to the column.** A 3000px site map squeezed into
+a 1000px page is legible only as a shape — the hostnames, IP addresses and port names, which are the
+whole reason to look at it, become unreadable. It scrolls sideways inside its own frame instead, and
+the report offers a *Fit to width* toggle for readers who want the overview.
+
 ## Full vs public
 
 | | Full | `--public` |

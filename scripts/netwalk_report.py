@@ -197,9 +197,33 @@ def sec_diagram(rec: dict, public: bool) -> str:
     except Exception as e:  # noqa: BLE001
         return f'<section id="diagram"><h2>Topology</h2><p class="empty">diagram failed: {esc(e)}</p></section>'
     return f"""<section id="diagram"><h2>Topology</h2>
-<p class="muted">Solid links were seen by LLDP, CDP or MNDP. Dashed links are inferred —
-something is physically there that does not announce itself.</p>
-<div class="scroll diagram">{svg}</div></section>"""
+<p class="muted">Reads left to right, the way traffic travels. Solid links were seen by LLDP, CDP or
+MNDP; dashed links are inferred — something is physically there that does not announce itself.
+Access points are grouped per switch, with their count and address range; every one of them is
+listed individually in the inventory below.</p>
+<div class="diagbar">
+  <button type="button" id="diagfit">Fit to width</button>
+  <button type="button" id="diagfull" hidden>Full size</button>
+  <span class="hint">Shown at full size — scroll sideways inside the frame to follow a link.</span>
+</div>
+<div class="scroll diagram" id="diagwrap">{svg}</div>
+<script>
+(function(){{
+  var w=document.getElementById('diagwrap'),f=document.getElementById('diagfit'),
+      u=document.getElementById('diagfull'),h=document.querySelector('.diagbar .hint');
+  if(!w||!f||!u)return;
+  function set(fit){{
+    w.classList.toggle('fit',fit); f.hidden=fit; u.hidden=!fit;
+    h.textContent=fit?'Scaled to the page — text will be small on a wide diagram.'
+                     :'Shown at full size — scroll sideways inside the frame to follow a link.';
+    try{{localStorage.setItem('netwalk.diagfit',fit?'1':'0')}}catch(e){{}}
+  }}
+  f.addEventListener('click',function(){{set(true)}});
+  u.addEventListener('click',function(){{set(false)}});
+  try{{ if(localStorage.getItem('netwalk.diagfit')==='1') set(true); }}catch(e){{}}
+}})();
+</script>
+</section>"""
 
 
 def sec_inventory(rec: dict) -> str:
@@ -469,8 +493,20 @@ border-radius:0 10px 10px 0;padding:12px 16px;margin:0 0 16px}
 .callout ul{padding-left:20px}
 .scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--line);
 border-radius:10px;background:var(--card);margin:0 0 14px}
-.scroll.diagram{padding:14px;text-align:center}
-.scroll.diagram svg{max-width:100%;height:auto}
+.scroll.diagram{padding:14px}
+/* Never shrink the diagram to fit the column. A site map squeezed from 3000px to
+   1000px is legible only as a shape - the hostnames, IPs and port names, which are
+   the entire reason to look at it, become unreadable. It renders at full size and
+   scrolls inside its own box instead. */
+/* margin:0, not auto: centring an over-wide child inside a scroll box pushes its
+   left edge out of reach, and the left edge is where the diagram starts. */
+.scroll.diagram svg{max-width:none;width:auto;height:auto;display:block;margin:0}
+.scroll.diagram.fit svg{max-width:100%;height:auto;margin:0 auto}
+.diagbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:0 0 10px}
+.diagbar button{font:600 12.5px var(--sans);padding:6px 12px;border-radius:99px;
+border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer}
+.diagbar button:hover{border-color:var(--accent);color:var(--accent)}
+.diagbar .hint{font-size:12.5px;color:var(--muted)}
 table{border-collapse:collapse;width:100%;font-size:13.5px}
 th{text-align:left;font:600 11.5px var(--sans);text-transform:uppercase;letter-spacing:.05em;
 color:var(--muted);padding:9px 12px;border-bottom:1px solid var(--line);white-space:nowrap}
