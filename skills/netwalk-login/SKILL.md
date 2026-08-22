@@ -164,6 +164,28 @@ Environment check when password auth is in play:
 python3 {{TOOLKIT}}/scripts/netwalk_common.py
 ```
 
+## Giving the engineer something to document from
+
+The customer report never contains a credential — the report renderer refuses to build from a record
+that has any in it. But the engineer who ran the scan usually does need a site access document, and
+that is a different file for a different audience:
+
+```bash
+# what a site document actually needs: which device, which address, which account,
+# which route in - and no secret values at all
+python3 {{TOOLKIT}}/scripts/netwalk_cred.py export --site acme-hq --out ~/Documents/acme-access.md
+
+# only if they genuinely need the values, and only with both flags
+python3 {{TOOLKIT}}/scripts/netwalk_cred.py export --site acme-hq --out ~/Documents/acme-secrets.md \
+  --with-secrets --i-understand-this-file-contains-passwords
+```
+
+Both are written 0600. `export` refuses to write anywhere under the site folder, because that folder
+holds the artefacts that get handed to the customer. Offer the default form; mention `--with-secrets`
+only if they ask for the values, and say plainly that it puts live passwords on disk.
+
+**Do not read either file.** You do not need to — you produced it for the user, not for yourself.
+
 ## Cleaning up
 
 Offer this at the end of every engagement, especially for someone else's network:

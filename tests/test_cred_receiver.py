@@ -326,6 +326,54 @@ def _(url, port):
         proc.kill(); proc.wait(timeout=5)
 
 
+@case("export writes an access document with no secret values by default")
+def _(url, port):
+    post(f"{url}/save", BROWSER_BODY, {"Origin": f"http://127.0.0.1:{port}"})
+    env = dict(os.environ)
+    env["NETWALK_HOME"] = str(HERE / ".tmp-netwalk-home")
+    out_file = HERE / ".tmp-netwalk-home" / "access.md"
+    r = subprocess.run([sys.executable, str(CRED), "export", "--site", SITE,
+                        "--out", str(out_file)], capture_output=True, text=True, env=env)
+    assert r.returncode == 0, r.stderr
+    doc = out_file.read_text()
+    assert "correct-horse" not in doc, "the default export leaked a password"
+    assert "10.0.0.1" in doc and "values not in this file" in doc, doc[:400]
+    if os.name != "nt":
+        assert oct(out_file.stat().st_mode)[-3:] == "600", oct(out_file.stat().st_mode)
+
+
+@case("export refuses to write into the folder the customer report lives in")
+def _(url, port):
+    env = dict(os.environ)
+    env["NETWALK_HOME"] = str(HERE / ".tmp-netwalk-home")
+    target = Path(env["NETWALK_HOME"]) / "sites" / "leak.md"
+    r = subprocess.run([sys.executable, str(CRED), "export", "--site", SITE,
+                        "--out", str(target)], capture_output=True, text=True, env=env)
+    assert r.returncode != 0 and "refusing to write" in r.stderr, r.stderr
+    assert not target.exists(), "it wrote the file anyway"
+
+
+@case("--with-secrets needs an explicit acknowledgement, then does include them")
+def _(url, port):
+    post(f"{url}/save", BROWSER_BODY, {"Origin": f"http://127.0.0.1:{port}"})
+    env = dict(os.environ)
+    env["NETWALK_HOME"] = str(HERE / ".tmp-netwalk-home")
+    out_file = HERE / ".tmp-netwalk-home" / "secret.md"
+    r = subprocess.run([sys.executable, str(CRED), "export", "--site", SITE,
+                        "--out", str(out_file), "--with-secrets"],
+                       capture_output=True, text=True, env=env)
+    assert r.returncode != 0 and "--i-understand" in r.stderr, r.stderr
+    assert not out_file.exists(), "it wrote passwords without the acknowledgement"
+    r = subprocess.run([sys.executable, str(CRED), "export", "--site", SITE,
+                        "--out", str(out_file), "--with-secrets",
+                        "--i-understand-this-file-contains-passwords"],
+                       capture_output=True, text=True, env=env)
+    assert r.returncode == 0, r.stderr
+    doc = out_file.read_text()
+    assert "correct-horse" in doc, "--with-secrets did not include the password"
+    assert "LIVE PASSWORDS" in doc, "the file carries no warning banner"
+
+
 @case("`list` prints host metadata and never the secret")
 def _(url, port):
     post(f"{url}/save", BROWSER_BODY, {"Origin": f"http://127.0.0.1:{port}"})

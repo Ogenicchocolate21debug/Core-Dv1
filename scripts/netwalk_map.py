@@ -30,6 +30,7 @@ NODE_W, NODE_H = 216, 96
 # from the internet on the left to the edge on the right, and a long site then grows
 # across the page rather than off the bottom of it.
 MAX_SLOTS = 9         # nodes per column before a rank wraps into another column
+MAX_TIDY = 60         # above this many leaves, fall back to the wrapped layout
 RANK_GAP = 118        # between ranks - along the flow axis
 SLOT_GAP = 26         # between nodes inside one rank
 WRAP_GAP = 46         # between the wrapped columns of a single rank
@@ -193,14 +194,21 @@ def build_layout(record: dict, orient: str = "lr") -> tuple[list[dict], list[dic
         adj[e["a_host"]].add(e["b_host"])
         adj[e["b_host"]].add(e["a_host"])
 
-    roots = [d["host_id"] for d in devices if d.get("role") in ("gateway", "router", "firewall")]
+    # One root, not several. The crawl started somewhere and everything else was
+    # reached FROM there, so a second router is a child of the first - not a peer
+    # floating at the top of the page with a long wire running down to it. Extra
+    # roots are added only for devices the crawl never reached from the entry point.
     entry = (record.get("entry_point") or {}).get("host_id")
-    if entry in by_id and entry not in roots:
-        roots.insert(0, entry)
+    if entry in by_id:
+        roots = [entry]
+    else:
+        gws = [d["host_id"] for d in devices if d.get("role") in ("gateway", "firewall")]
+        roots = gws[:1] or [d["host_id"] for d in devices if d.get("role") == "router"][:1]
     if not roots and devices:
         roots = [devices[0]["host_id"]]
 
     depth: dict[str, int] = {}
+    parent: dict[str, str] = {}
     q = deque()
     for r in roots:
         depth[r] = 0
@@ -210,24 +218,84 @@ def build_layout(record: dict, orient: str = "lr") -> tuple[list[dict], list[dic
         for nb in sorted(adj[cur]):
             if nb not in depth:
                 depth[nb] = depth[cur] + 1
+                parent[nb] = cur          # the edge the crawl actually descended
                 q.append(nb)
-    for d in devices:  # islands: fall back to what the role implies
-        depth.setdefault(d["host_id"], ROLE_RANK.get(d.get("role", "unknown"), 4))
+    for d in sorted(devices, key=lambda d: d["host_id"]):
+        hid = d["host_id"]
+        if hid in depth:
+            continue
+        # an island the entry point could not reach: root it where its role belongs
+        depth[hid] = ROLE_RANK.get(d.get("role", "unknown"), 4)
+        roots.append(hid)
+        q.append(hid)
+        while q:
+            cur = q.popleft()
+            for nb in sorted(adj[cur]):
+                if nb not in depth:
+                    depth[nb] = depth[cur] + 1
+                    parent[nb] = cur
+                    q.append(nb)
 
     rows: dict[int, list[str]] = defaultdict(list)
     for d in sorted(devices, key=lambda d: (depth[d["host_id"]], d["host_id"])):
         rows[depth[d["host_id"]]].append(d["host_id"])
 
-    # barycentre passes - cheap, deterministic, and enough for site-sized graphs
-    order = {hid: i for r in rows.values() for i, hid in enumerate(r)}
-    for _ in range(4):
-        for rank in sorted(rows):
-            def bary(hid: str) -> tuple[float, str]:
-                peers = [order[n] for n in adj[hid] if depth.get(n) == rank - 1]
-                return ((sum(peers) / len(peers)) if peers else order[hid], hid)
-            rows[rank].sort(key=bary)
-            for i, hid in enumerate(rows[rank]):
-                order[hid] = i
+    # ---- ordering ----------------------------------------------------------
+    # The crawl descended a tree: every device was first reached from exactly one
+    # parent. Laying that tree out tidily - each parent centred over its own
+    # children, every subtree kept contiguous - is what makes the links readable,
+    # because a tree edge then never has to cross another one. Ordering each rank
+    # independently (which is what a barycentre pass does) produces the same
+    # topology drawn as a bundle of crossing wires.
+    children: dict[str, list[str]] = defaultdict(list)
+    for child, par in parent.items():
+        children[par].append(child)
+    for par in children:
+        children[par].sort(key=lambda h: (ROLE_RANK.get(by_id[h].get("role", "unknown"), 4), h))
+
+    leaves = sum(1 for d in devices if not children.get(d["host_id"]))
+    tidy = leaves <= MAX_TIDY
+    order: dict[str, float] = {}
+    if tidy:
+        cursor = [0.0]
+        seen_walk: set[str] = set()
+
+        def walk(node: str) -> None:
+            if node in seen_walk:
+                return
+            seen_walk.add(node)
+            kids = [k for k in children.get(node, []) if k not in seen_walk]
+            if not kids:
+                order[node] = cursor[0]
+                cursor[0] += 1
+                return
+            for k in kids:
+                walk(k)
+            first, last = order[kids[0]], order[kids[-1]]
+            order[node] = (first + last) / 2
+
+        for r in sorted(roots, key=lambda h: (ROLE_RANK.get(by_id[h].get("role", "unknown"), 4), h)):
+            walk(r)
+        for d in devices:                      # anything the tree never reached
+            if d["host_id"] not in order:
+                order[d["host_id"]] = cursor[0]
+                cursor[0] += 1
+        for rank in rows:
+            rows[rank].sort(key=lambda h: order[h])
+        span = cursor[0]
+    else:
+        # barycentre passes - cheap, deterministic, and all that is affordable when
+        # the tree is too wide to lay out tidily
+        pos_in_row = {hid: i for r in rows.values() for i, hid in enumerate(r)}
+        for _ in range(4):
+            for rank in sorted(rows):
+                def bary(hid: str) -> tuple[float, str]:
+                    peers = [pos_in_row[n] for n in adj[hid] if depth.get(n) == rank - 1]
+                    return ((sum(peers) / len(peers)) if peers else pos_in_row[hid], hid)
+                rows[rank].sort(key=bary)
+                for i, hid in enumerate(rows[rank]):
+                    pos_in_row[hid] = i
+        span = 0
 
     # Place everything in (rank, slot) space first, then project. Keeping the two
     # apart is what lets the same layout render left-to-right or top-to-bottom
@@ -237,30 +305,40 @@ def build_layout(record: dict, orient: str = "lr") -> tuple[list[dict], list[dic
     rank_span = (NODE_W + RANK_GAP) if lr else (NODE_H + RANK_GAP)
     wrap_span = (NODE_W + WRAP_GAP) if lr else (NODE_H + WRAP_GAP)
 
-    max_slots = max(3, min(MAX_SLOTS, max((len(r) for r in rows.values()), default=1)))
-    cross = max_slots * slot_span - SLOT_GAP          # size across the flow
     wans = record.get("wan_links") or []
     lead = PAD + ((WAN_W + RANK_GAP) if (wans and lr) else (WAN_H + 44) if wans else 0)
-
     pos: dict[str, tuple[float, float]] = {}
-    along = lead
-    for rank in sorted(rows):
-        row = rows[rank]
-        cols = [row[i:i + max_slots] for i in range(0, len(row), max_slots)] or [[]]
-        for ci, col in enumerate(cols):
-            col_cross = len(col) * slot_span - SLOT_GAP
-            c0 = PAD + (cross - col_cross) / 2
-            a = along + ci * wrap_span
-            for i, hid in enumerate(col):
-                across = c0 + i * slot_span
+
+    if tidy:
+        cross = max(span, 1) * slot_span - SLOT_GAP
+        for rank in sorted(rows):
+            a = lead + rank * rank_span
+            for hid in rows[rank]:
+                across = PAD + order[hid] * slot_span
                 pos[hid] = (a, across) if lr else (across, a)
-        along += (len(cols) - 1) * wrap_span + rank_span
+        along = lead + (max(rows) + 1) * rank_span if rows else lead
+    else:
+        max_slots = max(3, min(MAX_SLOTS, max((len(r) for r in rows.values()), default=1)))
+        cross = max_slots * slot_span - SLOT_GAP
+        along = lead
+        for rank in sorted(rows):
+            row = rows[rank]
+            cols = [row[i:i + max_slots] for i in range(0, len(row), max_slots)] or [[]]
+            for ci, col in enumerate(cols):
+                col_cross = len(col) * slot_span - SLOT_GAP
+                c0 = PAD + (cross - col_cross) / 2
+                a = along + ci * wrap_span
+                for i, hid in enumerate(col):
+                    across = c0 + i * slot_span
+                    pos[hid] = (a, across) if lr else (across, a)
+            along += (len(cols) - 1) * wrap_span + rank_span
 
     flow_len = along - RANK_GAP + PAD
     width = flow_len if lr else cross + 2 * PAD
     height = (cross + 2 * PAD) if lr else flow_len
     geom = {"width": width, "height": height, "pos": pos, "lead": lead,
-            "cross": cross, "orient": orient, "by_id": by_id, "rows": rows, "depth": depth}
+            "cross": cross, "orient": orient, "by_id": by_id, "rows": rows,
+            "depth": depth, "parent": parent, "tidy": tidy}
     return devices, edges, geom
 
 
@@ -409,8 +487,13 @@ def plan_edges(edges: list[dict], geom: dict) -> list[dict]:
         ap, bp = e.get("a_port"), e.get("b_port")
         if depth.get(a, 0) > depth.get(b, 0):
             a, b, ap, bp = b, a, bp, ap
+        # A link the crawl actually descended is the backbone of the picture; any
+        # other link between the same ranks is a second path, and drawing them the
+        # same way is what makes a diagram look like a bundle of wires.
+        par = geom.get("parent", {})
         plans.append({"a": a, "b": b, "ap": ap, "bp": bp, "e": e,
-                      "sibling": depth.get(a, 0) == depth.get(b, 0)})
+                      "sibling": depth.get(a, 0) == depth.get(b, 0),
+                      "tree": par.get(b) == a or par.get(a) == b})
 
     lr = geom["orient"] == "lr"
     cross_of = (lambda hid: pos[hid][1]) if lr else (lambda hid: pos[hid][0])
@@ -442,7 +525,11 @@ def edge_svg(p: dict, geom: dict) -> str:
     bx, by = pos[p["b"]]
     e = p["e"]
     lr = geom["orient"] == "lr"
-    cls = "link inferred" if e.get("discovered_via") == "inferred" else "link"
+    cls = "link"
+    if e.get("discovered_via") == "inferred":
+        cls += " inferred"
+    elif not p.get("tree"):
+        cls += " extra"
     s_off = p.get("s_off", (NODE_H if lr else NODE_W) / 2)
     e_off = p.get("e_off", (NODE_H if lr else NODE_W) / 2)
 
@@ -521,6 +608,7 @@ CSS = """
 .logo-initial{font:600 14px var(--nw-sans);fill:var(--nw-muted);text-anchor:middle}
 .link{fill:none;stroke:var(--nw-line-strong);stroke-width:1.6}
 .link.inferred{stroke-dasharray:4 4;stroke:var(--nw-muted)}
+.link.extra{stroke:var(--nw-accent);stroke-width:1.3;opacity:.75;stroke-dasharray:9 3}
 .wan-link{stroke:var(--nw-accent)}
 .wan rect{fill:var(--nw-wan);stroke:var(--nw-accent);stroke-width:1.5}
 .wan-title{font:600 13px var(--nw-sans);fill:var(--nw-ink)}

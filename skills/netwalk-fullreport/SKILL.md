@@ -54,6 +54,11 @@ Before rendering, the record is swept for anything that looks like a secret — 
 private-key blocks, `password=` assignments, SNMP communities or Cisco `secret` hashes. If anything
 matches, **the render is refused** with the exact JSON path.
 
+If the user asks for the credentials so they can write up the site, that is a fair request and the
+answer is not the report: `netwalk_cred.py export` writes them a separate 0600 access document, which
+by default carries the addresses, accounts and routes in without any secret values. The report stays
+clean either way.
+
 When that fires, fix the record — do not weaken the check. A secret in a customer-facing report is
 the one failure in this toolkit that cannot be walked back once the file is sent.
 
