@@ -17,6 +17,8 @@ one and silently passed every real site, where the packs use `print detail`.
 
 Run after ANY edit to netwalk_audit.py:  python3 tests/test_audit.py
 """
+from __future__ import annotations
+
 import json
 import os
 import sys
