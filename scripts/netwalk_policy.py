@@ -47,6 +47,7 @@ PROFILES: dict[str, dict] = {
             r"^/export\b",                            # config export = read-only dump
             r"^/?system\s+resource\s+print",
             r"^/?tool\s+ping\b.*\bcount=\d+",         # bounded ping only
+            r"^/?tool\s+ip-scan\b.*\bduration=\d+s?\b",  # bounded on-device subnet sweep
             r"^/?tool\s+traceroute\b.*\bcount=\d+",
             r"^/?tool\s+bandwidth-test\b.*\bduration=\d+s?\b",
             r"^/?log\s+print\b",
@@ -164,7 +165,7 @@ PROFILES: dict[str, dict] = {
             r"^cat\s+/(proc|sys|etc)/\S+$",
             r"^(head|tail)\s+(-n\s*\d+\s+)?/\S+$",
             r"^ls(\s+-[a-zA-Z]+)*(\s+\S+)*$",
-            r"^(uname|uptime|hostname|hostnamectl|timedatectl|nproc|whoami|id|w|who|last|date|lsb_release)\b",
+            r"^(uname|uptime|hostname|hostnamectl|timedatectl|nproc|whoami|id|w|who|last|lastlog|date|lsb_release)\b",
             r"^(lscpu|lsblk|lspci|lsusb|lsmod|dmidecode)\b",
             r"^(free|vmstat|iostat|mpstat|sar)\b",
             r"^df(\s+-[a-zA-Z]+)*(\s+\S+)*$",

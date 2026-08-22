@@ -119,7 +119,42 @@
           },
           "confidence": {"type": "string", "enum": ["confirmed", "likely", "suspected"]},
           "recommendation": {"type": "string", "description": "what to do. netwalk NEVER does it."},
+          "references": {"type": "array", "items": {"type": "string"},
+            "description": "where the rule behind this finding comes from - the vendor hardening guidance it was taken from. Written by netwalk_audit.py; a hand-written finding may carry one too."},
           "public_safe": {"type": "boolean", "default": true, "description": "false = hide in --public report mode"}
+        }
+      }
+    },
+    "sweeps": {
+      "type": "array",
+      "description": "authorised subnet sweeps and port scans. netwalk crawls from devices it can log into; a sweep is the other half - what answers on a range the owner explicitly authorised. TCP only, so it is blind to UDP services and to hosts that drop rather than reject.",
+      "items": {
+        "type": "object",
+        "required": ["range", "method", "authorized_by"],
+        "additionalProperties": false,
+        "properties": {
+          "kind": {"type": "string", "enum": ["host-sweep", "port-scan"]},
+          "range": {"type": "string", "description": "what was swept, as authorised"},
+          "method": {"type": "string", "description": "tcp-connect [+ icmp] [via socks]"},
+          "via": {"type": ["string", "null"], "description": "jump host the sweep ran through, null if it ran from the engineer's machine"},
+          "authorized_by": {"type": "string", "description": "who said yes, and when. A sweep with no name here should never have run."},
+          "started_at": {"type": "string"},
+          "addresses_probed": {"type": "integer"},
+          "hosts_found": {"type": "integer"},
+          "not_visible": {"type": "array", "items": {"type": "string"}, "description": "what this method cannot see - goes into the report so nobody reads the sweep as exhaustive"},
+          "hosts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "ip": {"type": "string"},
+                "open_ports": {"type": "array", "items": {"type": "integer"}},
+                "services": {"type": "array", "items": {"type": "string"}},
+                "in_record": {"type": "boolean", "description": "false = it answered but is not in devices[]. Every one of these belongs on the credential form."}
+              }
+            }
+          }
         }
       }
     },

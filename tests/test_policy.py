@@ -21,6 +21,8 @@ MUST_ALLOW = [
     ("mikrotik", "/interface monitor-traffic ether1 once"),
     ("mikrotik", "/ip neighbor print detail"),
     ("mikrotik", "/tool ping 192.0.2.8 count=4"),
+    ("mikrotik", "/tool ip-scan address-range=10.2.30.0/24 duration=30s"),
+    ("mikrotik", "/tool ip-scan address-range=10.2.30.0/24 port=22,80,443 duration=60"),
     ("cisco", "show running-config"),
     ("cisco", "show interfaces | include CRC"),
     ("cisco", "terminal length 0"),
@@ -56,6 +58,9 @@ MUST_ALLOW = [
 
 MUST_DENY = [
     # config writes
+    # an on-device sweep must be bounded - an unbounded ip-scan runs until someone stops it
+    ("mikrotik", "/tool ip-scan address-range=10.2.30.0/24"),
+    ("mikrotik", "/tool ip-scan interface=ether1"),
     ("mikrotik", "/ip firewall filter add chain=input action=drop"),
     ("mikrotik", "/ip address set 0 address=203.0.113.4"),
     ("mikrotik", "/interface disable ether1"),

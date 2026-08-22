@@ -24,6 +24,7 @@ from collections import Counter
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import netwalk_map  # noqa: E402
+import netwalk_common as C  # noqa: E402
 
 # ------------------------------------------------------------- secret sweep
 
@@ -188,7 +189,41 @@ def sec_method(rec: dict, public: bool) -> str:
 and anything that writes configuration, clears a counter, or restarts a service was refused by
 the tool rather than by convention. No device configuration was changed. Configuration was
 <i>exported</i> for reading; nothing was imported.</p></div>
+{sec_artefacts(rec, public)}
 {gap_html}</section>"""
+
+
+def sec_artefacts(rec: dict, public: bool) -> str:
+    """Where the sensitive by-products of this survey are sitting, on whose machine.
+
+    The report is the thing people keep; the credential store and the config exports are
+    the things they forget. A survey that hands over a polished document and leaves a
+    plaintext credential file on an engineer's laptop, unmentioned, has moved the risk
+    rather than reported it. Paths only - never a value, and never in the public copy.
+    """
+    if public:
+        return ""
+    slug = C.slugify(str((rec.get("site") or {}).get("id") or "")) if rec.get("site") else ""
+    if not slug:
+        return ""
+    creds = C.creds_dir() / f"{slug}.json"
+    exports = [d for d in (rec.get("devices") or []) if d.get("config_export_path")]
+    lines = [
+        f"<li><b>Credentials</b> — <code>{esc(creds)}</code>. Plain JSON, readable only by "
+        f"the account that ran the survey. netwalk never deletes this on its own: remove it "
+        f"with <code>netwalk_cred.py forget --site {esc(slug)}</code> when the engagement is "
+        f"over. Deletion overwrites the file first, which is not a forensic wipe on an SSD — "
+        f"if any of these credentials matter, rotate them rather than trusting the delete.</li>",
+    ]
+    if exports:
+        lines.append(
+            f"<li><b>Configuration exports</b> — {len(exports)} file(s) under "
+            f"<code>{esc(C.site_dir(slug) / 'configs')}</code>. These contain PSKs, SNMP "
+            f"communities and password hashes in clear text. They are deliberately not part "
+            f"of this report; do not forward them.</li>")
+    return ('<div class="callout"><h3>Where this survey left sensitive files</h3>'
+            '<p>On the machine that ran the survey, not on your equipment:</p><ul>'
+            + "".join(lines) + "</ul></div>")
 
 
 def sec_diagram(rec: dict, public: bool) -> str:
@@ -422,6 +457,69 @@ def sec_findings(findings: list[dict], public: bool) -> str:
     return f'<section id="findings"><h2>Findings and recommendations</h2>{note}{"".join(out)}</section>'
 
 
+def _ip_key(host: dict):
+    """Sort addresses numerically. String order puts .140 before .99 and looks broken."""
+    import ipaddress  # noqa: PLC0415
+    try:
+        ip = ipaddress.ip_address(str(host.get("ip")))
+        return (0, ip.version, ip.packed, "")
+    except ValueError:
+        return (1, 0, b"", str(host.get("ip")))
+
+
+def _count(n, noun: str) -> str:
+    n = n or 0
+    return f"{num(n)} {noun}{'' if n == 1 else 'es' if noun.endswith('ss') else 's'}"
+
+
+def sec_sweeps(rec: dict, public: bool) -> str:
+    """What answered on the ranges the owner authorised - and what the method cannot see.
+
+    The blind spots are printed next to the results on purpose. A list of open ports with
+    no caveat reads as "this is everything that is open", which is never true of a TCP
+    connect sweep.
+    """
+    sweeps = rec.get("sweeps") or []
+    if not sweeps or public:
+        # A per-address list of open ports is a shopping list. The public copy says a
+        # sweep happened, in Method; it does not print the results.
+        return ""
+    blocks = []
+    for s in sweeps:
+        hosts = s.get("hosts") or []
+        rows = []
+        for h in sorted(hosts, key=_ip_key):
+            ports = h.get("open_ports") or []
+            rows.append([
+                f'<code>{esc(h.get("ip"))}</code>',
+                esc(", ".join(str(p) for p in ports) or "—"),
+                esc(", ".join(h.get("services") or []) or "—"),
+                "in the inventory" if h.get("in_record") else
+                '<b class="bad">not identified</b>',
+            ])
+        unknown = sum(1 for h in hosts if not h.get("in_record"))
+        head = (f'<h3>{esc(s.get("range"))}</h3>'
+                f'<p class="muted">{esc(s.get("method") or "tcp-connect")}'
+                f'{" through " + esc(s.get("via")) if s.get("via") else ""} · '
+                f'{_count(s.get("addresses_probed"), "address")} probed · '
+                f'{num(s.get("hosts_found"))} answered'
+                f'{" · " + str(unknown) + " not in the inventory" if unknown else ""}</p>')
+        auth = s.get("authorized_by")
+        auth_html = (f'<p class="muted">Authorised by: {esc(auth)}</p>' if auth else
+                     '<p class="muted"><b class="bad">No authorisation was recorded for this '
+                     'sweep.</b></p>')
+        blind = s.get("not_visible") or []
+        blind_html = (f'<p class="muted">Not visible to this method: '
+                      f'{esc(", ".join(blind))}.</p>' if blind else "")
+        blocks.append(head + auth_html +
+                      table(["Address", "Open TCP ports", "Services", "Known?"], rows,
+                            "nothing on this range answered") + blind_html)
+    intro = ('<p class="muted">A sweep only covers ranges the site owner explicitly '
+             'authorised, and it opens a TCP connection and closes it again — nothing is '
+             'sent to any service.</p>')
+    return f'<section id="sweeps"><h2>Address sweep</h2>{intro}{"".join(blocks)}</section>'
+
+
 def sec_evidence(rec: dict) -> str:
     log = rec.get("evidence_log") or []
     if not log:
@@ -556,12 +654,16 @@ def render(rec: dict, public: bool = False, title: str | None = None) -> str:
     name = title or site.get("name") or site.get("id") or "Network survey"
     parts = [sec_summary(rec, findings, public), sec_method(rec, public),
              sec_diagram(rec, public), sec_inventory(rec),
-             sec_devices(rec, public), sec_findings(findings, public)]
+             sec_devices(rec, public), sec_sweeps(rec, public),
+             sec_findings(findings, public)]
     if not public:
         parts.append(sec_evidence(rec))
 
     toc = [("summary", "Summary"), ("method", "Method"), ("diagram", "Topology"),
-           ("inventory", "Inventory"), ("devices", "Device detail"), ("findings", "Findings")]
+           ("inventory", "Inventory"), ("devices", "Device detail")]
+    if rec.get("sweeps") and not public:
+        toc.append(("sweeps", "Address sweep"))
+    toc.append(("findings", "Findings"))
     if not public and rec.get("evidence_log"):
         toc.append(("evidence", "Command log"))
     nav = "".join(f'<a href="#{i}">{esc(t)}</a>' for i, t in toc)
