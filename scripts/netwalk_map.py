@@ -59,6 +59,21 @@ def clip(s, n: int) -> str:
     return s if len(s) <= n else s[: n - 1] + "…"
 
 
+# Rough advance widths. There is no text-measurement API when generating SVG offline,
+# so these are per-character averages calibrated against the fonts in CSS. Counting
+# characters instead is what let a GATEWAY badge sit on top of a hostname.
+def text_w(s: str, px: float, mono: bool = False, tracking: float = 0.0) -> float:
+    return len(str(s)) * (px * (0.60 if mono else 0.54) + tracking)
+
+
+def fit(s: str, px: float, limit: float, mono: bool = False, tracking: float = 0.0) -> str:
+    s = str(s or "")
+    if text_w(s, px, mono, tracking) <= limit:
+        return s
+    per = px * (0.60 if mono else 0.54) + tracking
+    return s[:max(3, int(limit / per) - 1)] + "\u2026"
+
+
 # ------------------------------------------------------------------ logos
 
 _logo_cache: dict[str, str | None] = {}
@@ -185,22 +200,25 @@ def node_svg(dev: dict, x: float, y: float, public: bool) -> str:
         chips.append(("UP", clip(dev["uptime"], 12), False))
 
     role_label = ROLE_LABEL.get(role, role.upper())
-    # the role badge is right-aligned in the same band as the hostname, so a long
-    # badge has to buy its space out of the hostname's budget, not overlap it
+    # the role badge is right-aligned in the same band as the hostname, so measure it
+    # and give the hostname whatever is actually left over
+    role_w = text_w(role_label, 9, tracking=0.9)
+    name_budget = NODE_W - 48 - 12 - role_w - 10
     parts = [f'<g class="{cls}" transform="translate({x:.1f},{y:.1f})">',
              f'<rect class="box" width="{NODE_W}" height="{NODE_H}" rx="10"/>',
              logo_group(dev.get("vendor"), 12, 12, 26),
-             f'<text class="hostname" x="48" y="26">{esc(clip(hid, max(7, 24 - len(role_label))))}</text>',
+             f'<text class="hostname" x="48" y="26">{esc(fit(hid, 14, name_budget))}</text>',
              f'<text class="role" x="{NODE_W - 12}" y="17">{esc(role_label)}</text>']
 
     ip = dev.get("mgmt_ip") or ""
     parts.append(f'<text class="ip" x="48" y="41">{esc(clip(ip, 19))}</text>')
 
     model = " ".join(p for p in [dev.get("model"), dev.get("os_version") or dev.get("firmware")] if p)
-    parts.append(f'<text class="model" x="12" y="60">{esc(clip(model, 34))}</text>')
+    parts.append(f'<text class="model" x="12" y="60">{esc(fit(model, 11, NODE_W - 24))}</text>')
 
     if unreachable:
-        parts.append(f'<text class="warn" x="12" y="80">{esc(clip(dev.get("unreachable_reason") or "not reachable", 32))}</text>')
+        parts.append(f'<text class="warn" x="12" y="80">'
+                     f'{esc(fit(dev.get("unreachable_reason") or "not reachable", 11, NODE_W - 24))}</text>')
     else:
         cx = 12
         for label, val, hot in chips[:4]:
@@ -306,14 +324,19 @@ def edge_svg(p: dict, geom: dict) -> str:
         d = (f"M{sx:.1f},{sy:.1f} V{mid:.1f} H{ex:.1f} V{ey:.1f}" if abs(ex - sx) > 1
              else f"M{sx:.1f},{sy:.1f} V{ey:.1f}")
         lx, ly = (sx + ex) / 2, mid - 5
-        pa = (sx + 4, sy + 13)
+        # stagger each label with its lane, or two links leaving adjacent ports
+        # print their port names on top of one another
+        lane = p.get("lane", 0)
+        pa = (sx + 4, sy + 13 + lane * 11)
         pb = (ex + 4, ey - 6)
 
     out = [f'<path class="{cls}" d="{d}"/>']
     if p["ap"]:
-        out.append(f'<text class="port" x="{pa[0]:.1f}" y="{pa[1]:.1f}">{esc(clip(p["ap"], 12))}</text>')
+        out.append(f'<text class="port" x="{pa[0]:.1f}" y="{pa[1]:.1f}">'
+                   f'{esc(fit(p["ap"], 9.5, 96, mono=True))}</text>')
     if p["bp"]:
-        out.append(f'<text class="port" x="{pb[0]:.1f}" y="{pb[1]:.1f}">{esc(clip(p["bp"], 12))}</text>')
+        out.append(f'<text class="port" x="{pb[0]:.1f}" y="{pb[1]:.1f}">'
+                   f'{esc(fit(p["bp"], 9.5, 96, mono=True))}</text>')
     label = " · ".join(x for x in [e.get("speed"), e.get("note")] if x)
     if label:
         out.append(f'<text class="linklabel" x="{lx:.1f}" y="{ly:.1f}">{esc(clip(label, 24))}</text>')
