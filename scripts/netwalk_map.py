@@ -26,9 +26,13 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 LOGO_DIR = os.path.join(os.path.dirname(HERE), "assets", "logos")
 
 NODE_W, NODE_H = 216, 96
-MAX_COLS = 8          # wrap a rank wider than this onto extra lines
-WRAP_GAP = 34         # vertical gap between the wrapped lines of one rank
-COL_GAP, ROW_GAP = 46, 108
+# Left-to-right is the default: a network diagram is read the way a packet travels,
+# from the internet on the left to the edge on the right, and a long site then grows
+# across the page rather than off the bottom of it.
+MAX_SLOTS = 9         # nodes per column before a rank wraps into another column
+RANK_GAP = 118        # between ranks - along the flow axis
+SLOT_GAP = 26         # between nodes inside one rank
+WRAP_GAP = 46         # between the wrapped columns of a single rank
 PAD = 40
 WAN_W, WAN_H = 200, 78
 
@@ -178,7 +182,7 @@ def group_aps(record: dict, minimum: int = 2) -> dict:
     return out
 
 
-def build_layout(record: dict) -> tuple[list[dict], list[dict], dict]:
+def build_layout(record: dict, orient: str = "lr") -> tuple[list[dict], list[dict], dict]:
     devices = [d for d in record.get("devices", []) if d.get("host_id")]
     by_id = {d["host_id"]: d for d in devices}
     edges = [e for e in record.get("topology_edges", [])
@@ -225,29 +229,38 @@ def build_layout(record: dict) -> tuple[list[dict], list[dict], dict]:
             for i, hid in enumerate(rows[rank]):
                 order[hid] = i
 
-    # A site with sixty access points on one rank would otherwise render as a single
-    # 14000px-wide strip - technically correct and completely unreadable. Wrap a wide
-    # rank onto several lines instead, and let the width follow the widest wrapped line.
-    max_cols = max(4, min(MAX_COLS, max((len(r) for r in rows.values()), default=1)))
-    width = max_cols * (NODE_W + COL_GAP) - COL_GAP
+    # Place everything in (rank, slot) space first, then project. Keeping the two
+    # apart is what lets the same layout render left-to-right or top-to-bottom
+    # without a second copy of the ordering logic.
+    lr = orient == "lr"
+    slot_span = (NODE_H + SLOT_GAP) if lr else (NODE_W + SLOT_GAP)
+    rank_span = (NODE_W + RANK_GAP) if lr else (NODE_H + RANK_GAP)
+    wrap_span = (NODE_W + WRAP_GAP) if lr else (NODE_H + WRAP_GAP)
+
+    max_slots = max(3, min(MAX_SLOTS, max((len(r) for r in rows.values()), default=1)))
+    cross = max_slots * slot_span - SLOT_GAP          # size across the flow
     wans = record.get("wan_links") or []
-    wan_top = PAD + (WAN_H + 44 if wans else 0)
+    lead = PAD + ((WAN_W + RANK_GAP) if (wans and lr) else (WAN_H + 44) if wans else 0)
 
     pos: dict[str, tuple[float, float]] = {}
-    y = wan_top
+    along = lead
     for rank in sorted(rows):
         row = rows[rank]
-        lines = [row[i:i + max_cols] for i in range(0, len(row), max_cols)] or [[]]
-        for line in lines:
-            line_w = len(line) * (NODE_W + COL_GAP) - COL_GAP
-            x0 = PAD + (width - line_w) / 2
-            for i, hid in enumerate(line):
-                pos[hid] = (x0 + i * (NODE_W + COL_GAP), y)
-            y += NODE_H + (WRAP_GAP if line is not lines[-1] else ROW_GAP)
+        cols = [row[i:i + max_slots] for i in range(0, len(row), max_slots)] or [[]]
+        for ci, col in enumerate(cols):
+            col_cross = len(col) * slot_span - SLOT_GAP
+            c0 = PAD + (cross - col_cross) / 2
+            a = along + ci * wrap_span
+            for i, hid in enumerate(col):
+                across = c0 + i * slot_span
+                pos[hid] = (a, across) if lr else (across, a)
+        along += (len(cols) - 1) * wrap_span + rank_span
 
-    height = y - ROW_GAP + PAD if rows else wan_top + PAD
-    geom = {"width": width + 2 * PAD, "height": height, "pos": pos, "wan_top": wan_top,
-            "content_w": width, "by_id": by_id, "rows": rows, "depth": depth}
+    flow_len = along - RANK_GAP + PAD
+    width = flow_len if lr else cross + 2 * PAD
+    height = (cross + 2 * PAD) if lr else flow_len
+    geom = {"width": width, "height": height, "pos": pos, "lead": lead,
+            "cross": cross, "orient": orient, "by_id": by_id, "rows": rows, "depth": depth}
     return devices, edges, geom
 
 
@@ -346,34 +359,46 @@ def node_svg(dev: dict, x: float, y: float, public: bool) -> str:
 def wan_svg(wans: list[dict], geom: dict) -> str:
     if not wans:
         return ""
-    total = len(wans) * (WAN_W + COL_GAP) - COL_GAP
-    x0 = PAD + (geom["content_w"] - total) / 2
+    lr = geom["orient"] == "lr"
     out = []
+    span = (WAN_H + 30) if lr else (WAN_W + 46)
+    total = len(wans) * span - (30 if lr else 46)
+    start = PAD + (geom["cross"] - total) / 2
     for i, w in enumerate(wans):
-        x = x0 + i * (WAN_W + COL_GAP)
-        lines = [w.get("isp") or "Internet uplink",
-                 w.get("ip") or "", " · ".join(p for p in [w.get("link_speed"), w.get("type"), w.get("role")] if p)]
-        out.append(f'<g class="wan" transform="translate({x:.1f},{PAD})">'
+        if lr:
+            x, y = PAD, start + i * span
+        else:
+            x, y = start + i * span, PAD
+        lines = [w.get("isp") or "Internet uplink", w.get("ip") or "",
+                 " \u00b7 ".join(p for p in [w.get("link_speed"), w.get("type"), w.get("role")] if p)]
+        out.append(f'<g class="wan" transform="translate({x:.1f},{y:.1f})">'
                    f'<rect width="{WAN_W}" height="{WAN_H}" rx="10"/>'
-                   f'<text class="wan-title" x="14" y="24">{esc(clip(lines[0], 22))}</text>'
-                   f'<text class="wan-ip" x="14" y="44">{esc(clip(lines[1], 24))}</text>'
-                   f'<text class="wan-meta" x="14" y="62">{esc(clip(lines[2], 28))}</text></g>')
+                   f'<text class="wan-title" x="14" y="24">{esc(fit(lines[0], 13, WAN_W - 28))}</text>'
+                   f'<text class="wan-ip" x="14" y="44">{esc(fit(lines[1], 12, WAN_W - 28, mono=True))}</text>'
+                   f'<text class="wan-meta" x="14" y="62">{esc(fit(lines[2], 10.5, WAN_W - 28))}</text></g>')
         host = w.get("on_host")
         if host in geom["pos"]:
             hx, hy = geom["pos"][host]
-            sx, sy = x + WAN_W / 2, PAD + WAN_H
-            ex, ey = hx + NODE_W / 2, hy
-            mid = (sy + ey) / 2
-            out.append(f'<path class="link wan-link" d="M{sx:.1f},{sy:.1f} V{mid:.1f} H{ex:.1f} V{ey:.1f}"/>')
+            if lr:
+                sx, sy = x + WAN_W, y + WAN_H / 2
+                ex, ey = hx, hy + NODE_H / 2
+                mid = (sx + ex) / 2
+                d = f"M{sx:.1f},{sy:.1f} H{mid:.1f} V{ey:.1f} H{ex:.1f}"
+            else:
+                sx, sy = x + WAN_W / 2, y + WAN_H
+                ex, ey = hx + NODE_W / 2, hy
+                mid = (sy + ey) / 2
+                d = f"M{sx:.1f},{sy:.1f} V{mid:.1f} H{ex:.1f} V{ey:.1f}"
+            out.append(f'<path class="link wan-link" d="{d}"/>')
     return "".join(out)
 
 
 def plan_edges(edges: list[dict], geom: dict) -> list[dict]:
-    """Give every link its own exit point, entry point and horizontal lane.
+    """Give every link its own exit point, entry point and lane.
 
-    Without this, four links leaving one switch all start from the same pixel and
-    their port labels print on top of each other - which is exactly the part of a
-    diagram an engineer needs to read.
+    Without this, four links leaving one switch start from the same pixel and their
+    port labels print on top of each other - which is the part of a diagram an
+    engineer actually needs to read.
     """
     pos, depth = geom["pos"], geom["depth"]
     plans = []
@@ -387,8 +412,12 @@ def plan_edges(edges: list[dict], geom: dict) -> list[dict]:
         plans.append({"a": a, "b": b, "ap": ap, "bp": bp, "e": e,
                       "sibling": depth.get(a, 0) == depth.get(b, 0)})
 
+    lr = geom["orient"] == "lr"
+    cross_of = (lambda hid: pos[hid][1]) if lr else (lambda hid: pos[hid][0])
+    extent = NODE_H if lr else NODE_W
+
     def slot(n: int, i: int) -> float:
-        return NODE_W * (i + 1) / (n + 1)
+        return extent * (i + 1) / (n + 1)
 
     out_groups: dict[str, list[dict]] = defaultdict(list)
     in_groups: dict[str, list[dict]] = defaultdict(list)
@@ -396,15 +425,14 @@ def plan_edges(edges: list[dict], geom: dict) -> list[dict]:
         out_groups[p["a"]].append(p)
         in_groups[p["b"]].append(p)
     for host, group in out_groups.items():
-        group.sort(key=lambda p: pos[p["b"]][0])
+        group.sort(key=lambda p: cross_of(p["b"]))
         for i, p in enumerate(group):
-            p["sx"] = pos[host][0] + slot(len(group), i)
-            p["lane"] = i
-            p["lanes"] = len(group)
+            p["s_off"] = slot(len(group), i)
+            p["lane"], p["lanes"] = i, len(group)
     for host, group in in_groups.items():
-        group.sort(key=lambda p: pos[p["a"]][0])
+        group.sort(key=lambda p: cross_of(p["a"]))
         for i, p in enumerate(group):
-            p["ex"] = pos[host][0] + slot(len(group), i)
+            p["e_off"] = slot(len(group), i)
     return plans
 
 
@@ -413,44 +441,61 @@ def edge_svg(p: dict, geom: dict) -> str:
     ax, ay = pos[p["a"]]
     bx, by = pos[p["b"]]
     e = p["e"]
+    lr = geom["orient"] == "lr"
     cls = "link inferred" if e.get("discovered_via") == "inferred" else "link"
+    s_off = p.get("s_off", (NODE_H if lr else NODE_W) / 2)
+    e_off = p.get("e_off", (NODE_H if lr else NODE_W) / 2)
 
     if p["sibling"]:
-        sy = ey = ay + NODE_H / 2
-        if bx >= ax:
-            sx, ex = ax + NODE_W, bx
+        if lr:                       # stacked in one column: join top to bottom
+            sx, sy = ax + NODE_W / 2, (ay + NODE_H) if by > ay else ay
+            ex, ey = bx + NODE_W / 2, by if by > ay else (by + NODE_H)
+            d = f"M{sx:.1f},{sy:.1f} V{ey:.1f}"
+            pa, pb = (sx + 5, sy + 12), (ex + 5, ey - 5)
         else:
-            sx, ex = ax, bx + NODE_W
-        d = f"M{sx:.1f},{sy:.1f} H{ex:.1f}"
-        lx, ly = (sx + ex) / 2, sy - 7
-        pa = (sx + (4 if ex > sx else -34), sy - 7)
-        pb = (ex + (-34 if ex > sx else 4), ey - 7)
+            sy = ey = ay + NODE_H / 2
+            sx, ex = (ax + NODE_W, bx) if bx >= ax else (ax, bx + NODE_W)
+            d = f"M{sx:.1f},{sy:.1f} H{ex:.1f}"
+            pa = (sx + (4 if ex > sx else -34), sy - 7)
+            pb = (ex + (-34 if ex > sx else 4), ey - 7)
+        lx, ly = (sx + ex) / 2, (sy + ey) / 2 - 6
+    elif lr:
+        sx, sy = ax + NODE_W, ay + s_off
+        ex, ey = bx, by + e_off
+        spread = min(RANK_GAP - 40, 16 * max(p.get("lanes", 1) - 1, 0))
+        base = sx + (RANK_GAP - spread) / 2
+        mid = base + spread * (p.get("lane", 0) / max(p.get("lanes", 1) - 1, 1)
+                               if p.get("lanes", 1) > 1 else 0)
+        d = (f"M{sx:.1f},{sy:.1f} H{mid:.1f} V{ey:.1f} H{ex:.1f}" if abs(ey - sy) > 1
+             else f"M{sx:.1f},{sy:.1f} H{ex:.1f}")
+        # port names go above the line, the link label below it - otherwise a short
+        # horizontal run prints "to Mikrotik" straight through "2-port LAG"
+        pa, pb = (sx + 5, sy - 6), (ex - 5, ey - 6)
+        lx, ly = (sx + ex) / 2, max(sy, ey) + 13
     else:
-        sx, sy = p.get("sx", ax + NODE_W / 2), ay + NODE_H
-        ex, ey = p.get("ex", bx + NODE_W / 2), by
-        # stagger the horizontal run so parallel links do not sit on one line
-        spread = min(ROW_GAP - 34, 18 * max(p.get("lanes", 1) - 1, 0))
-        base = sy + (ROW_GAP - spread) / 2
-        mid = base + spread * (p.get("lane", 0) / max(p.get("lanes", 1) - 1, 1) if p.get("lanes", 1) > 1 else 0)
+        sx, sy = ax + s_off, ay + NODE_H
+        ex, ey = bx + e_off, by
+        spread = min(RANK_GAP - 34, 18 * max(p.get("lanes", 1) - 1, 0))
+        base = sy + (RANK_GAP - spread) / 2
+        mid = base + spread * (p.get("lane", 0) / max(p.get("lanes", 1) - 1, 1)
+                               if p.get("lanes", 1) > 1 else 0)
         d = (f"M{sx:.1f},{sy:.1f} V{mid:.1f} H{ex:.1f} V{ey:.1f}" if abs(ex - sx) > 1
              else f"M{sx:.1f},{sy:.1f} V{ey:.1f}")
+        pa, pb = (sx + 4, sy + 13 + p.get("lane", 0) * 11), (ex + 4, ey - 6)
         lx, ly = (sx + ex) / 2, mid - 5
-        # stagger each label with its lane, or two links leaving adjacent ports
-        # print their port names on top of one another
-        lane = p.get("lane", 0)
-        pa = (sx + 4, sy + 13 + lane * 11)
-        pb = (ex + 4, ey - 6)
 
     out = [f'<path class="{cls}" d="{d}"/>']
+    anchor = ' text-anchor="end"' if (lr and not p["sibling"]) else ""
     if p["ap"]:
         out.append(f'<text class="port" x="{pa[0]:.1f}" y="{pa[1]:.1f}">'
                    f'{esc(fit(p["ap"], 9.5, 96, mono=True))}</text>')
     if p["bp"]:
-        out.append(f'<text class="port" x="{pb[0]:.1f}" y="{pb[1]:.1f}">'
+        out.append(f'<text class="port"{anchor} x="{pb[0]:.1f}" y="{pb[1]:.1f}">'
                    f'{esc(fit(p["bp"], 9.5, 96, mono=True))}</text>')
-    label = " · ".join(x for x in [e.get("speed"), e.get("note")] if x)
+    label = " \u00b7 ".join(x for x in [e.get("speed"), e.get("note")] if x)
     if label:
-        out.append(f'<text class="linklabel" x="{lx:.1f}" y="{ly:.1f}">{esc(clip(label, 24))}</text>')
+        out.append(f'<text class="linklabel" x="{lx:.1f}" y="{ly:.1f}">'
+                   f'{esc(fit(label, 9.5, 130))}</text>')
     return "".join(out)
 
 
@@ -497,7 +542,7 @@ TOKENS_DARK = """--nw-bg:#0f1216;--nw-card:#171c22;--nw-line:#2a323c;--nw-line-s
 
 
 def render(record: dict, public: bool = False, title: str | None = None,
-           standalone: bool = True, group: bool = True) -> str:
+           standalone: bool = True, group: bool = True, orient: str = "lr") -> str:
     """standalone=True -> a .svg file. standalone=False -> an <svg> to paste into a page.
 
     Either way the theme tokens ride along, scoped to `.netwalk-map`, because an
@@ -507,7 +552,7 @@ def render(record: dict, public: bool = False, title: str | None = None,
     total_devices = len(record.get("devices", []))
     if group:
         record = group_aps(record)
-    devices, edges, geom = build_layout(record)
+    devices, edges, geom = build_layout(record, orient=orient)
     site = record.get("site", {})
     heading = title or f"{site.get('name') or site.get('id') or 'network'}"
     sub = [] if public else ([f"scanned {record.get('scanned_at','')}"] if record.get("scanned_at") else [])
@@ -551,14 +596,17 @@ def main() -> int:
     ap.add_argument("-o", "--out", required=True)
     ap.add_argument("--public", action="store_true", help="omit scan date and other internal detail")
     ap.add_argument("--title")
+    ap.add_argument("--top-down", dest="orient", action="store_const", const="tb",
+                    help="stack the diagram top to bottom instead of left to right")
     ap.add_argument("--no-group-aps", dest="group", action="store_false",
                     help="draw every access point separately instead of grouping them per switch")
-    ap.set_defaults(group=True)
+    ap.set_defaults(group=True, orient="lr")
     args = ap.parse_args()
 
     with open(args.record, encoding="utf-8") as fh:
         record = json.load(fh)
-    svg = render(record, public=args.public, title=args.title, group=args.group)
+    svg = render(record, public=args.public, title=args.title, group=args.group,
+                 orient=args.orient)
     with open(args.out, "w", encoding="utf-8") as fh:
         fh.write(svg)
     n = len(record.get("devices", []))

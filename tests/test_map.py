@@ -55,21 +55,39 @@ def main() -> int:
     if "sw0-ap0" not in kept:
         fails.append("a multi-homed AP was collapsed into a group")
 
-    wide = M.render(synthetic(n_aps=40, n_switches=4), group=False)
-    w = float(re.search(r'viewBox="0 0 ([\d.]+)', wide).group(1))
-    if w > 4000:
-        fails.append(f"ungrouped canvas is {w:.0f}px wide - rank wrapping is not working")
-    narrow = float(re.search(r'viewBox="0 0 ([\d.]+)',
-                             M.render(synthetic(n_aps=40, n_switches=4))).group(1))
-    if narrow > w:
-        fails.append("grouping made the diagram wider, not narrower")
+    def canvas(svg):
+        m = re.search(r'viewBox="0 0 ([\d.]+) ([\d.]+)"', svg)
+        return float(m.group(1)), float(m.group(2))
+
+    big = synthetic(n_aps=40, n_switches=4)
+    # Left to right, the flow runs along x, so wrapping is what has to bound y.
+    _, h_lr = canvas(M.render(big, group=False, orient="lr"))
+    if h_lr > 2000:
+        fails.append(f"left-to-right canvas is {h_lr:.0f}px tall - rank wrapping is not working")
+    # Top to bottom it is the other way round.
+    w_tb, _ = canvas(M.render(big, group=False, orient="tb"))
+    if w_tb > 3000:
+        fails.append(f"top-down canvas is {w_tb:.0f}px wide - rank wrapping is not working")
+    # Whatever the orientation, grouping must shrink the picture.
+    for o in ("lr", "tb"):
+        a = canvas(M.render(big, group=False, orient=o))
+        b = canvas(M.render(big, group=True, orient=o))
+        if a[0] * a[1] <= b[0] * b[1]:
+            fails.append(f"grouping did not shrink the {o} diagram")
+    # The gateway must sit before the switches along the flow axis.
+    geom = M.build_layout(M.group_aps(synthetic()), orient="lr")[2]
+    if geom["pos"]["gw"][0] >= geom["pos"]["sw0"][0]:
+        fails.append("left to right: the gateway is not to the left of its switch")
+    geom = M.build_layout(M.group_aps(synthetic()), orient="tb")[2]
+    if geom["pos"]["gw"][1] >= geom["pos"]["sw0"][1]:
+        fails.append("top to bottom: the gateway is not above its switch")
 
     svg = M.render(rec)
     for want in ("AP GROUP", "20 access points", "10.0.1.1", "10.0.1.20"):
         if want not in svg:
             fails.append(f"the group node does not show {want!r}")
 
-    total = 9
+    total = 13
     for f in fails:
         print(f"  FAIL  {f}")
     print(f"\n{total - len(fails)}/{total} map checks pass")

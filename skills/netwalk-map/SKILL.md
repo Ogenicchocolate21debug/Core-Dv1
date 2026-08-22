@@ -11,7 +11,8 @@ Part of the **netwalk** read-only network survey toolkit. Toolkit lives at `{{TO
 
 ```bash
 python3 {{TOOLKIT}}/scripts/netwalk_map.py ~/.netwalk/sites/acme-hq/scan-2026-08-22.json \
-  -o ~/.netwalk/sites/acme-hq/map.svg [--public] [--title "Acme HQ — after the switch swap"]
+  -o ~/.netwalk/sites/acme-hq/map.svg \
+  [--public] [--title "Acme HQ — after the switch swap"] [--top-down] [--no-group-aps]
 ```
 
 Output is one self-contained SVG: no external fonts, no scripts, no network requests. It opens in a
@@ -26,9 +27,14 @@ The renderer draws only what the record says. **Never hand-edit the SVG** — fi
 re-render, or the diagram and the report start telling different stories and the next scan silently
 reverts your edit.
 
-Layout is deterministic: WAN links on top, then devices ranked by BFS depth from the gateway,
-ordered inside each rank to minimise crossings. Same record in, same SVG out — so two scans of one
-site diff cleanly and a changed diagram means a changed network.
+Layout is deterministic and reads **left to right**, the way a packet travels: internet uplinks in
+a column on the left, then the gateway, then each layer of switching, then the edge. Devices are
+ranked by BFS depth from the gateway and ordered inside each rank to minimise crossings. A rank with
+more devices than fit in one column wraps into another column rather than running off the page.
+Same record in, same SVG out — so two scans of one site diff cleanly and a changed diagram means a
+changed network.
+
+`--top-down` stacks it vertically instead, which suits a shallow network or a portrait page.
 
 ## What the record needs for a good diagram
 
@@ -66,8 +72,10 @@ point separately.
   line to make the picture tidier.
 - **Unreachable devices still appear**, dashed, with the reason on the box. A device you could not
   log into is part of the network and leaving it out makes the map a lie.
-- **`role` drives the layers**: `gateway`/`router`/`firewall` → `l3-switch`/`controller` →
-  `switch` → `ap`/`server`/`nas`/`nvr` → everything else.
+- **`role` drives the layers**, left to right: `gateway`/`router`/`firewall` →
+  `l3-switch`/`controller` → `switch` → `ap`/`server`/`nas`/`nvr` → everything else.
+- **Port names sit above a link, the link's own label below it.** A short run between two adjacent
+  ranks would otherwise print the port name straight through the speed label.
 
 ## Logos
 
@@ -80,6 +88,8 @@ device gets a lettered chip.
 
 - **Boxes overlapping or the picture is enormous** — usually many devices in one rank because
   `role` is missing or everything is `unknown`. Fix the roles.
+- **Very tall (left to right) or very wide (top down)** — one rank holds far more devices than the
+  others. Check the AP grouping did what you expected, then consider the other orientation.
 - **A device floating with no links** — no `topology_edges` entry references it. Either you did not
   derive the edge, or it genuinely is not connected to anything you scanned; say which.
 - **Wrong parent** — a discovery frame seen on a bridge/VLAN interface was recorded as a direct
