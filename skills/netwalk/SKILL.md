@@ -47,8 +47,10 @@ Pick a site slug (`acme-hq`). Everything for the engagement lands in `~/.netwalk
 ## Stage 1 — access (`netwalk-login`)
 
 Serve the credential form for the entry device. Never take a secret in the chat, not even offered.
-Verify with `netwalk_exec.py probe` before moving on — an unverified credential wastes the whole
-next stage.
+Hand the `netwalk_cred.py request` command to the user to run in their own terminal (`!` prefix in
+Claude Code) rather than running it as a background task — it waits on a human, and a reaped task
+takes the one-time URL with it. Verify with `netwalk_exec.py probe` before moving on; an unverified
+credential wastes the whole next stage.
 
 ## Stage 2 — crawl (`netwalk-scan`)
 

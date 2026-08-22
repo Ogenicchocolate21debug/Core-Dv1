@@ -331,7 +331,9 @@ def cmd_request(args: argparse.Namespace) -> int:
     port = httpd.server_address[1]
     url = f"http://127.0.0.1:{port}/{Receiver.token}"
     print(f"NETWALK_LOGIN_URL {url}", flush=True)
-    print(f"waiting up to {args.timeout}s for the form to be submitted "
+    waiting = ("waiting until stopped" if args.timeout <= 0
+               else f"waiting up to {args.timeout}s")
+    print(f"{waiting} for the form to be submitted "
           f"({len(hosts)} device(s), site={args.site})", file=sys.stderr, flush=True)
     if not args.no_open:
         try:
@@ -340,9 +342,15 @@ def cmd_request(args: argparse.Namespace) -> int:
             print("could not open a browser automatically - open the URL above yourself",
                   file=sys.stderr)
 
-    deadline = time.monotonic() + args.timeout
-    while Receiver.result is None and time.monotonic() < deadline:
-        httpd.handle_request()
+    # --timeout 0 means no deadline. A listener that dies on its own takes the URL
+    # with it - the token and port are fresh every run - so mid-engagement the least
+    # surprising behaviour is to keep waiting until someone stops it.
+    deadline = None if args.timeout <= 0 else time.monotonic() + args.timeout
+    try:
+        while Receiver.result is None and (deadline is None or time.monotonic() < deadline):
+            httpd.handle_request()
+    except KeyboardInterrupt:
+        print("\nstopped before anything was submitted", file=sys.stderr)
     httpd.server_close()
 
     if Receiver.result is None:
@@ -410,7 +418,8 @@ def main() -> int:
     r.add_argument("--host", action="append", default=[],
                    metavar="id[,ip[,vendor[,note]]]", help="repeat once per device")
     r.add_argument("--port", type=int, default=0, help="0 = pick a free port")
-    r.add_argument("--timeout", type=int, default=900)
+    r.add_argument("--timeout", type=int, default=900,
+                   help="seconds to wait for a submit; 0 = wait until stopped")
     r.add_argument("--no-open", action="store_true", help="do not launch a browser")
     r.set_defaults(func=cmd_request)
 

@@ -55,6 +55,19 @@ and exits. Nothing is transmitted off the machine and nothing passes through you
    The command prints `NETWALK_LOGIN_URL <url>` and then blocks. **Tell the user the URL** in case
    the browser did not open, and say plainly that you cannot see what they type.
 
+   **Prefer handing this command to the user to run in their own terminal.** It waits on a human at
+   a keyboard, which can be minutes, and an agent background task is the wrong place for that — it
+   gets reaped, it hits a timeout, and when it dies the URL dies with it because the port and token
+   are fresh on every run. In Claude Code the user can run it inline by prefixing `!`:
+
+   ```
+   ! python3 {{TOOLKIT}}/scripts/netwalk_cred.py request --site acme-hq --host 'gw01,192.168.1.1,mikrotik' --timeout 0
+   ```
+
+   `--timeout 0` waits until they stop it with Ctrl-C. Then continue from step 5 — `list` and
+   `probe` tell you it worked without you ever seeing a value. Run it yourself only when the user
+   is clearly at the keyboard and expecting it right now.
+
 4. **Wait.** It exits by itself on save. On success it prints `SAVED n host(s)` and the protection
    that was applied. If it prints a `WARNING` that the file could not be locked down (a Windows box
    with no `icacls`, an exotic filesystem), pass that warning on to the user verbatim — do not
