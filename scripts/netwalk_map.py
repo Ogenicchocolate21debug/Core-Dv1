@@ -52,6 +52,14 @@ ROLE_LABEL = {
     "ap": "AP", "controller": "CONTROLLER", "server": "SERVER", "nas": "NAS",
     "nvr": "NVR", "printer": "PRINTER", "ups": "UPS", "client": "CLIENT", "unknown": "DEVICE",
 }
+# An ISP written any of a dozen ways on a scan record still means one operator.
+ISP_ALIAS = {
+    "true online": "true", "trueonline": "true", "true internet": "true",
+    "ais fibre": "ais", "ais fiber": "ais", "advanced info service": "ais",
+    "3bb fibre": "3bb", "3bb fiber": "3bb", "triple t": "3bb",
+    "national telecom": "nt", "tot public": "tot", "cat telecom": "cat",
+    "symphony communication": "symphony", "united information highway": "uih",
+}
 LOGO_ALIAS = {
     "routeros": "mikrotik", "unifi": "ubiquiti", "edgeos": "ubiquiti", "ubnt": "ubiquiti",
     "hpe": "hp", "procurve": "hp", "aruba-cx": "aruba", "arubaos": "aruba",
@@ -88,8 +96,15 @@ def fit(s: str, px: float, limit: float, mono: bool = False, tracking: float = 0
 _logo_cache: dict[str, str | None] = {}
 
 
-def logo_group(vendor: str | None, x: float, y: float, size: int = 26) -> str:
-    key = LOGO_ALIAS.get((vendor or "").lower().strip(), (vendor or "").lower().strip())
+def isp_key(name: str | None) -> str:
+    n = re.sub(r"\s+", " ", (name or "").lower().strip())
+    n = ISP_ALIAS.get(n, n)
+    return "isp-" + re.sub(r"[^a-z0-9]+", "-", n).strip("-")
+
+
+def logo_group(vendor: str | None, x: float, y: float, size: int = 26,
+               raw_key: str | None = None) -> str:
+    key = raw_key or LOGO_ALIAS.get((vendor or "").lower().strip(), (vendor or "").lower().strip())
     if key not in _logo_cache:
         path = os.path.join(LOGO_DIR, f"{key}.svg")
         inner = None
@@ -104,7 +119,7 @@ def logo_group(vendor: str | None, x: float, y: float, size: int = 26) -> str:
     packed = _logo_cache[key]
     if not packed:
         # No logo on file: a lettered chip beats a blank space.
-        initial = (vendor or "?")[:1].upper()
+        initial = (vendor or key.replace("isp-", "") or "?")[:1].upper()
         return (f'<g><rect class="logo-fallback" x="{x}" y="{y}" width="{size}" height="{size}" rx="6"/>'
                 f'<text class="logo-initial" x="{x + size/2}" y="{y + size*0.72}">{esc(initial)}</text></g>')
     vb, body = json.loads(packed)
@@ -333,6 +348,12 @@ def build_layout(record: dict, orient: str = "lr") -> tuple[list[dict], list[dic
                     pos[hid] = (a, across) if lr else (across, a)
             along += (len(cols) - 1) * wrap_span + rank_span
 
+    # The uplink column can be taller than the tree it feeds. Sizing the canvas from
+    # the tree alone cut the last WAN box off the bottom of the page.
+    if wans:
+        wan_span = (WAN_H + 30) if lr else (WAN_W + 46)
+        cross = max(cross, len(wans) * wan_span - (30 if lr else 46))
+
     flow_len = along - RANK_GAP + PAD
     width = flow_len if lr else cross + 2 * PAD
     height = (cross + 2 * PAD) if lr else flow_len
@@ -447,13 +468,18 @@ def wan_svg(wans: list[dict], geom: dict) -> str:
             x, y = PAD, start + i * span
         else:
             x, y = start + i * span, PAD
-        lines = [w.get("isp") or "Internet uplink", w.get("ip") or "",
+        isp = w.get("isp") or "Internet uplink"
+        lines = [isp, w.get("ip") or "",
                  " \u00b7 ".join(p for p in [w.get("link_speed"), w.get("type"), w.get("role")] if p)]
         out.append(f'<g class="wan" transform="translate({x:.1f},{y:.1f})">'
                    f'<rect width="{WAN_W}" height="{WAN_H}" rx="10"/>'
-                   f'<text class="wan-title" x="14" y="24">{esc(fit(lines[0], 13, WAN_W - 28))}</text>'
-                   f'<text class="wan-ip" x="14" y="44">{esc(fit(lines[1], 12, WAN_W - 28, mono=True))}</text>'
-                   f'<text class="wan-meta" x="14" y="62">{esc(fit(lines[2], 10.5, WAN_W - 28))}</text></g>')
+                   + logo_group(None, 12, 12, 22, raw_key=isp_key(isp)) +
+                   f'<text class="wan-title" x="42" y="27">'
+                   f'{esc(fit(lines[0], 13, WAN_W - 56))}</text>'
+                   f'<text class="wan-ip" x="14" y="50">'
+                   f'{esc(fit(lines[1], 12, WAN_W - 28, mono=True))}</text>'
+                   f'<text class="wan-meta" x="14" y="66">'
+                   f'{esc(fit(lines[2], 10.5, WAN_W - 28))}</text></g>')
         host = w.get("on_host")
         if host in geom["pos"]:
             hx, hy = geom["pos"][host]

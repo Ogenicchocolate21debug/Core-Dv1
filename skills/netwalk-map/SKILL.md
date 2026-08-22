@@ -77,6 +77,23 @@ point separately.
 - **Port names sit above a link, the link's own label below it.** A short run between two adjacent
   ranks would otherwise print the port name straight through the speed label.
 
+## Internet uplinks carry the operator's mark
+
+Each WAN box shows the ISP's own wordmark next to its name, matched from `wan_links[].isp` against
+`assets/logos/isp-<slug>.svg`. Common Thai operators resolve through an alias table, so "AIS Fibre",
+"True Online" and "3BB Fiber" all find the right mark. An operator with no file gets a lettered chip
+— never a blank.
+
+```bash
+python3 {{TOOLKIT}}/scripts/netwalk_logos.py isp                       # the built-in set
+python3 {{TOOLKIT}}/scripts/netwalk_logos.py isp "Fibre Co" --colour '#009688'
+```
+
+Get the real operator names from the device rather than guessing: on RouterOS the PPPoE client
+interfaces usually carry them as comments (`/interface pppoe-client print detail`), which also gives
+you the contracted speed. Read that, put it in `wan_links[].isp` and `link_speed`, and keep the PPPoE
+account names out of the record — those are credentials.
+
 ## Logos
 
 `{{TOOLKIT}}/assets/logos/<vendor>.svg`, 24×24 viewBox, one path or text element, monochrome so it

@@ -202,25 +202,31 @@ MNDP; dashed links are inferred — something is physically there that does not 
 Access points are grouped per switch, with their count and address range; every one of them is
 listed individually in the inventory below.</p>
 <div class="diagbar">
-  <button type="button" id="diagfit">Fit to width</button>
-  <button type="button" id="diagfull" hidden>Full size</button>
-  <span class="hint">Shown at full size — scroll sideways inside the frame to follow a link.</span>
+  <button type="button" id="diagopen">Open full size &#8599;</button>
+  <span class="hint">Scaled to the page. Click the diagram to open it full size in a new tab.</span>
 </div>
-<div class="scroll diagram" id="diagwrap">{svg}</div>
+<div class="scroll diagram fit" id="diagwrap" title="Click to open full size in a new tab">{svg}</div>
 <script>
 (function(){{
-  var w=document.getElementById('diagwrap'),f=document.getElementById('diagfit'),
-      u=document.getElementById('diagfull'),h=document.querySelector('.diagbar .hint');
-  if(!w||!f||!u)return;
-  function set(fit){{
-    w.classList.toggle('fit',fit); f.hidden=fit; u.hidden=!fit;
-    h.textContent=fit?'Scaled to the page — text will be small on a wide diagram.'
-                     :'Shown at full size — scroll sideways inside the frame to follow a link.';
-    try{{localStorage.setItem('netwalk.diagfit',fit?'1':'0')}}catch(e){{}}
+  var w=document.getElementById('diagwrap'), b=document.getElementById('diagopen');
+  if(!w||!b) return;
+  var svg=w.querySelector('svg');
+  function openFull(){{
+    if(!svg) return;
+    // about:blank is same-origin, so this works from a file:// copy of the report and
+    // from a mail client temp folder. A blob: URL does not, reliably.
+    var t=window.open('','_blank');
+    if(!t){{ alert('The browser blocked the new tab. Allow pop-ups for this page.'); return; }}
+    var title=(document.title||'network diagram').replace(/[<>]/g,'');
+    t.document.write('<!doctype html><html><head><meta charset="utf-8"><title>'+title+
+      '</title><style>html,body{{margin:0;background:#fff}}'+
+      '@media(prefers-color-scheme:dark){{html,body{{background:#0e1116}}}}'+
+      'svg{{display:block;margin:0 auto}}</style></head><body>'+
+      svg.outerHTML+'</body></html>');
+    t.document.close();
   }}
-  f.addEventListener('click',function(){{set(true)}});
-  u.addEventListener('click',function(){{set(false)}});
-  try{{ if(localStorage.getItem('netwalk.diagfit')==='1') set(true); }}catch(e){{}}
+  b.addEventListener('click', openFull);
+  w.addEventListener('click', openFull);
 }})();
 </script>
 </section>"""
@@ -500,7 +506,11 @@ border-radius:10px;background:var(--card);margin:0 0 14px}
    scrolls inside its own box instead. */
 /* margin:0, not auto: centring an over-wide child inside a scroll box pushes its
    left edge out of reach, and the left edge is where the diagram starts. */
+.scroll.diagram{cursor:zoom-in}
 .scroll.diagram svg{max-width:none;width:auto;height:auto;display:block;margin:0}
+/* Fitted is the default inside the report: the page should read as a page. Full size
+   lives one click away in its own tab, where it has room to be legible. */
+.scroll.diagram.fit{overflow-x:hidden}
 .scroll.diagram.fit svg{max-width:100%;height:auto;margin:0 auto}
 .diagbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:0 0 10px}
 .diagbar button{font:600 12.5px var(--sans);padding:6px 12px;border-radius:99px;

@@ -82,12 +82,33 @@ def main() -> int:
     if geom["pos"]["gw"][1] >= geom["pos"]["sw0"][1]:
         fails.append("top to bottom: the gateway is not above its switch")
 
+    # WAN boxes carry the operator's mark, and an unknown operator still gets something
+    wanrec = synthetic(n_aps=2, n_switches=1)
+    wanrec["wan_links"] = [
+        {"isp": "3BB", "on_host": "gw", "ip": "1.1.1.1/32", "link_speed": "1G"},
+        {"isp": "AIS Fibre", "on_host": "gw", "ip": "2.2.2.2/32"},
+        {"isp": "Some Local ISP", "on_host": "gw", "ip": "3.3.3.3/32"},
+        {"isp": "True", "on_host": "gw", "ip": "4.4.4.4/32"},
+        {"isp": "Symphony", "on_host": "gw", "ip": "5.5.5.5/32"},
+    ]
+    wsvg = M.render(wanrec)
+    if M.isp_key("AIS Fibre") != "isp-ais":
+        fails.append(f"ISP alias not resolved: {M.isp_key('AIS Fibre')}")
+    if "logo-fallback" not in wsvg:
+        fails.append("an ISP with no mark on file did not fall back to a lettered chip")
+    # the uplink column must not run off the bottom of the canvas
+    _, wh = canvas(wsvg)
+    lowest = max(y for _x, y in M.build_layout(M.group_aps(wanrec), orient="lr")[2]["pos"].values())
+    need = M.PAD + len(wanrec["wan_links"]) * (M.WAN_H + 30) - 30
+    if wh < need:
+        fails.append(f"canvas {wh:.0f}px is shorter than the {need:.0f}px WAN column")
+
     svg = M.render(rec)
     for want in ("AP GROUP", "20 access points", "10.0.1.1", "10.0.1.20"):
         if want not in svg:
             fails.append(f"the group node does not show {want!r}")
 
-    total = 13
+    total = 16
     for f in fails:
         print(f"  FAIL  {f}")
     print(f"\n{total - len(fails)}/{total} map checks pass")

@@ -40,6 +40,20 @@ WORDMARK = {
     "zyxel": ("ZYXEL", "#E3001B"),
 }
 
+# Thai ISPs are not in Simple Icons, and an internet uplink with no mark on it is
+# the one box on a network diagram people scan for first. Generated wordmarks in the
+# operator's own colour are enough to tell three circuits apart at a glance.
+ISP_WORDMARK = {
+    "3bb": ("3BB", "#0066B3"), "ais": ("AIS", "#8DC63F"),
+    "ais-fibre": ("AIS", "#8DC63F"), "true": ("TRUE", "#E4002B"),
+    "trueonline": ("TRUE", "#E4002B"), "nt": ("NT", "#005BAA"),
+    "tot": ("TOT", "#0057A8"), "cat": ("CAT", "#F58220"),
+    "symphony": ("SYMPHONY", "#00A0E9"), "uih": ("UIH", "#0072BC"),
+    "jastel": ("JASTEL", "#ED1C24"), "sinet": ("SINET", "#005EB8"),
+    "dtac": ("dtac", "#00AEEF"), "starlink": ("STARLINK", "#000000"),
+    "internet": ("INTERNET", "#5B6B7B"),
+}
+
 NOTICE = """# Vendor logos
 
 This directory is populated by `scripts/netwalk_logos.py fetch` and is **not** part of
@@ -56,10 +70,17 @@ right to use in your context - netwalk falls back to a lettered chip.
 
 
 def wordmark(text: str, colour: str) -> str:
+    """A name set to fit a 24x24 box, whatever its length.
+
+    Choosing a font size by character count is a guess, and a long operator name like
+    SYMPHONY overflowed the box and printed across the label beside it. textLength
+    makes the browser do the fitting instead of us.
+    """
     size = 10.5 if len(text) <= 5 else 9.0 if len(text) <= 7 else 7.5
     return (f'<svg role="img" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'
             f'<title>{text}</title>'
-            f'<text x="12" y="16" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" '
+            f'<text x="12" y="15.5" text-anchor="middle" textLength="22" '
+            f'lengthAdjust="spacingAndGlyphs" font-family="Helvetica,Arial,sans-serif" '
             f'font-weight="bold" font-size="{size}" fill="{colour}">{text}</text></svg>')
 
 
@@ -111,6 +132,27 @@ def cmd_fetch(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_isp(args: argparse.Namespace) -> int:
+    """Write wordmarks for internet providers, as isp-<slug>.svg."""
+    os.makedirs(LOGO_DIR, exist_ok=True)
+    wanted = {k.lower(): v for k, v in ISP_WORDMARK.items()}
+    if args.name:
+        for n in args.name:
+            slug = re.sub(r"[^a-z0-9]+", "-", n.lower()).strip("-")
+            if slug not in wanted:
+                wanted[slug] = (n.upper()[:12], args.colour or "#5B6B7B")
+        wanted = {k: v for k, v in wanted.items()
+                  if k in {re.sub(r"[^a-z0-9]+", "-", n.lower()).strip("-") for n in args.name}}
+    for slug, (text, colour) in sorted(wanted.items()):
+        with open(os.path.join(LOGO_DIR, f"isp-{slug}.svg"), "w", encoding="utf-8") as fh:
+            fh.write(wordmark(text, colour))
+        print(f"  wordmark  isp-{slug}  ({text})")
+    print(f"\n{len(wanted)} ISP mark(s) in {LOGO_DIR}")
+    print("netwalk matches these against wan_links[].isp - an uplink whose ISP has no "
+          "mark gets a lettered chip instead")
+    return 0
+
+
 def cmd_list(args: argparse.Namespace) -> int:
     if not os.path.isdir(LOGO_DIR):
         print(f"no logo directory yet ({LOGO_DIR}) - run: netwalk_logos.py fetch")
@@ -129,6 +171,11 @@ def main() -> int:
     f = sub.add_parser("fetch")
     f.add_argument("vendor", nargs="*")
     f.set_defaults(func=cmd_fetch)
+    i = sub.add_parser("isp", help="write wordmarks for internet providers")
+    i.add_argument("name", nargs="*", help="ISP names; omit for the built-in set")
+    i.add_argument("--colour", help="brand colour for a name that is not built in")
+    i.set_defaults(func=cmd_isp)
+
     l = sub.add_parser("list")
     l.set_defaults(func=cmd_list)
     args = ap.parse_args()
