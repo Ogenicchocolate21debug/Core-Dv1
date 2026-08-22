@@ -97,7 +97,8 @@ account names out of the record — those are credentials.
 ## Logos
 
 `{{TOOLKIT}}/assets/logos/<vendor>.svg`, 24×24 viewBox, one path or text element, monochrome so it
-can inherit the theme colour. To add a vendor, drop in `<vendor>.svg` matching the `vendor` string
+can inherit the theme colour. Omada devices come back as `vendor: "tplink"`, which the fetched logo set already covers.
+To add a vendor, drop in `<vendor>.svg` matching the `vendor` string
 in the record (or add an alias in `LOGO_ALIAS` in `netwalk_map.py`). No logo is not an error — the
 device gets a lettered chip.
 

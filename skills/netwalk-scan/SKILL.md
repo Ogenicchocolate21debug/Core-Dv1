@@ -109,7 +109,20 @@ For each device, in this order:
      --evidence ~/.netwalk/sites/acme-hq/evidence.jsonl
    ```
 
-   Packs exist for `mikrotik`, `cisco`, `aruba`, `hp`, `fortinet`, `linux`, `windows`. For a vendor
+   Packs exist for `mikrotik`, `cisco`, `aruba`, `hp`, `fortinet`, `linux`, `windows`.
+
+   **Controller-managed estates do not get crawled device by device.** UniFi and Omada both know
+   every device they adopted, so read the controller once instead of SSHing into a hundred APs:
+
+   ```bash
+   python3 {{TOOLKIT}}/scripts/netwalk_unifi.py collect --site acme-hq --host unifi-controller --out unifi.json
+   python3 {{TOOLKIT}}/scripts/netwalk_omada.py info    --site acme-hq --host omada-controller
+   python3 {{TOOLKIT}}/scripts/netwalk_omada.py collect --site acme-hq --host omada-controller --out omada.json
+   ```
+
+   Run Omada's `info` first: it hits `/api/info`, which needs no credential, so it separates "wrong
+   address" from "wrong credential" - the two failures that look identical from the outside. Both
+   adapters take `--via user@host` when the controller only answers from inside the site. For a vendor
    with no pack, use the `unknown` profile (`show`/`display`/`get`/`print` only) and add commands
    one at a time with `--cmd`, checking each with `netwalk_exec.py check --vendor ... --cmd ...`.
    Some commands in a pack will not exist on a given model — a failed command is normal, not a

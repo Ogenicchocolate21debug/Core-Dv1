@@ -154,9 +154,22 @@ and exits. Nothing is transmitted off the machine and nothing passes through you
 | SSH key file | there is a key on this machine | Give the **path**. Best option — no secret is stored by netwalk at all. |
 | SSH password | the device only does passwords | Needs a helper: `paramiko` (any OS), `sshpass` (macOS/Linux) or `plink` (Windows). Run the preflight below if unsure. |
 | SSH key + password | key login plus an enable/secondary password | e.g. Cisco `enable` |
-| API token | the vendor is driven over HTTP, not SSH | netwalk stores it; you drive the API yourself. `netwalk_exec.py` only speaks SSH. |
+| API token | the vendor is driven over HTTP, not SSH — UniFi and Omada controllers | netwalk stores it; you drive the API yourself. `netwalk_exec.py` only speaks SSH. |
 | I know what it is, no login | they can identify it but cannot give access | Fill in what it is, its role, what it is for and who owns it. The device is then documented in the report as a known device that was not surveyed - far more useful than a blank, and it gets a proper `role` on the diagram |
 | Skip | you do not have access and are not getting it | The device stays in the record as `reachable: false` with a reason. Any questions on that card are still saved, and an existing credential is left alone — use `forget` to remove one. That is a legitimate result: say so in the report rather than leaving a gap. |
+
+### Controller credentials
+
+| Controller | Username field | API token field | Where the user finds it |
+|---|---|---|---|
+| UniFi (Network 9+) | — | API key | Control Plane → Admins → API keys |
+| UniFi (older) | local admin | — | use the password field |
+| Omada (Open API) | **client_id** | **client_secret** | Settings → Platform Integration → Open API |
+| Omada (older) | controller admin | — | use the password field |
+
+Put the controller's address in **Management URL** (`https://omada.example.com:8043`) — a controller
+almost never answers on the port its devices use, and the port box defaults to SSH. Put the site id
+in **Site / tenant** if they know it; both adapters will list the sites otherwise.
 
 Environment check when password auth is in play:
 
