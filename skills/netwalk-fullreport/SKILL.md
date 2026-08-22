@@ -92,6 +92,23 @@ Give them the paths, say which mode each file is, and say plainly what is missin
 stopped early or three devices were unreachable, that goes in your message as well as in the
 report — do not let a polished document imply a completeness the scan did not have.
 
+**Say where the survey left its sensitive files, every time.** The full report renders a *Where this
+survey left sensitive files* box in the Method section — the path to the credential store, the path
+to the config exports, and the fact that netwalk deletes neither of them by itself. Repeat it in
+your message rather than assuming they read that box:
+
+- `~/.netwalk/creds/<slug>.json` — the credentials they typed into the login form, plain JSON,
+  file-permission protected and **not encrypted**. It survives the engagement until someone runs
+  `netwalk_cred.py forget --site <slug>`, on **every machine the survey ran from** — a survey driven
+  from two boxes leaves two copies.
+- `~/.netwalk/sites/<slug>/configs/` — full config exports, containing PSKs, SNMP communities and
+  password hashes in clear text.
+
+Then offer to clear the credential store there and then. If any of those credentials are sensitive,
+say that deleting is not the same as rotating: the shred overwrites the file, which on an SSD or a
+copy-on-write filesystem is not a guarantee. The box appears in the full copy only — a customer
+reading the public copy has no business learning where the engineer keeps their passwords.
+
 ## Never
 
 - Send or upload the report anywhere. Produce the file, hand over the path, let the user decide who
