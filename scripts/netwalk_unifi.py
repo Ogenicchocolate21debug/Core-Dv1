@@ -21,9 +21,14 @@ in netwalk, the value is read by this process and never returned to the caller.
 from __future__ import annotations
 
 import argparse
+import atexit
 import json
 import os
+import shutil
+import socket
 import ssl
+import subprocess
+import time
 import sys
 import urllib.error
 import urllib.parse
@@ -44,6 +49,71 @@ def now_iso() -> str:
 def die(msg: str, code: int = 1):
     print(f"netwalk_unifi: {msg}", file=sys.stderr)
     raise SystemExit(code)
+
+
+class Tunnel:
+    """An `ssh -L` hop for controllers that only answer from inside the site.
+
+    A management VLAN that is not routed to the engineer's laptop is the normal
+    case, not an edge case. This opens a local port that forwards through a host
+    which IS reachable, so the adapter can talk to the controller unchanged.
+
+    It needs LOCAL forwarding on the jump host. MikroTik ships `forwarding-enabled`
+    set to `no` or `remote`, and `remote` looks like success - the listener opens and
+    then no byte ever crosses - so that case is detected and named rather than left
+    as a timeout.
+    """
+
+    def __init__(self, via: str, target_host: str, target_port: int):
+        self.via = via
+        self.target = f"{target_host}:{target_port}"
+        self.proc = None
+        self.local_port = None
+
+    def _free_port(self) -> int:
+        with socket.socket() as s:
+            s.bind(("127.0.0.1", 0))
+            return s.getsockname()[1]
+
+    def open(self) -> str:
+        if not shutil.which("ssh"):
+            die("--via needs an OpenSSH client on PATH", 4)
+        self.local_port = self._free_port()
+        argv = ["ssh", "-N", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10",
+                "-o", "ExitOnForwardFailure=yes", "-o", "StrictHostKeyChecking=accept-new",
+                "-o", f"UserKnownHostsFile={C.known_hosts()}",
+                "-L", f"{self.local_port}:{self.target}", self.via]
+        self.proc = subprocess.Popen(argv, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        atexit.register(self.close)
+        deadline = time.monotonic() + 12
+        while time.monotonic() < deadline:
+            if self.proc.poll() is not None:
+                err = self.proc.stderr.read().decode("utf-8", "replace").strip()
+                die(f"could not open the tunnel through {self.via}: {err[:300]}", 4)
+            try:
+                with socket.create_connection(("127.0.0.1", self.local_port), timeout=1):
+                    return f"127.0.0.1:{self.local_port}"
+            except OSError:
+                time.sleep(0.3)
+        die(f"the tunnel through {self.via} never came up", 4)
+        return ""
+
+    def explain_dead_tunnel(self) -> str:
+        return (f"the tunnel to {self.target} through {self.via} accepted the connection but "
+                f"carried no data. That is what a jump host that refuses LOCAL forwarding looks "
+                f"like - the listener is ours, the far end is never opened. On RouterOS check "
+                f"`/ip ssh print`: forwarding-enabled must be `local` or `both`, and `remote` "
+                f"alone behaves exactly like this. Changing it is a configuration change, so "
+                f"netwalk will not do it - ask the owner, or run netwalk from a host inside the "
+                f"management network instead.")
+
+    def close(self):
+        if self.proc and self.proc.poll() is None:
+            self.proc.terminate()
+            try:
+                self.proc.wait(timeout=5)
+            except Exception:  # noqa: BLE001
+                self.proc.kill()
 
 
 def load_host(site: str, host: str) -> dict:
@@ -152,6 +222,11 @@ class Controller:
             if code == 200 and isinstance(body, dict) and "data" in body:
                 self.flavour = "integration"
                 return "UniFi OS Integration API (X-API-KEY)"
+            if code == 0:
+                # No HTTP status at all: the connection itself failed. Blaming the
+                # credential here sends people to rotate a key that was never used.
+                die(f"no HTTP response from {self.base} - {body}. This is a transport "
+                    f"problem, not a credential problem.", 4)
             if code in (401, 403):
                 die("the controller rejected the API key (HTTP "
                     f"{code}). Check it was copied whole, and that the key has not expired.", 4)
@@ -228,8 +303,69 @@ def _mb(v):
     return round(v / 1024 / 1024, 1) if isinstance(v, (int, float)) and v else None
 
 
+def _integration_shape(d: dict) -> bool:
+    """The Integration API and the classic /stat/device API share almost no field
+    names. Detect which one produced this record instead of guessing."""
+    return "macAddress" in d or "firmwareVersion" in d
+
+
+def _role_from_features(features: list, model: str) -> str:
+    f = {str(x).lower() for x in (features or [])}
+    if f & {"gateway", "routing"}:
+        return "gateway"
+    if "accesspoint" in f:
+        return "ap"          # an AP with a switch port is still an AP
+    if "switching" in f:
+        return "switch"
+    m = (model or "").upper()
+    if m.startswith(("US", "USW")):
+        return "switch"
+    if m.startswith(("UAP", "U6", "U7", "AC")):
+        return "ap"
+    return "unknown"
+
+
 def map_device(d: dict) -> dict:
     """Turn one controller device record into a netwalk device."""
+    if _integration_shape(d):
+        name = d.get("name") or d.get("macAddress") or "unnamed"
+        state = str(d.get("state") or "").upper()
+        dev = {
+            "host_id": name,
+            "hostname": name,
+            "mgmt_ip": d.get("ipAddress"),
+            "vendor": "ubiquiti",
+            "model": d.get("model"),
+            "os": "UniFi",
+            "os_version": d.get("firmwareVersion"),
+            "role": _role_from_features(d.get("features"), d.get("model")),
+            "reachable": state == "ONLINE",
+            "access_method": "controller",
+        }
+        if state != "ONLINE":
+            dev["unreachable_reason"] = f"the controller reports this device as {state or 'unknown'}"
+        if d.get("supported") is False:
+            dev["unreachable_reason"] = (dev.get("unreachable_reason") or "") + \
+                " (the controller marks this model unsupported)"
+        ports = []
+        for pt in ((d.get("interfaces") or {}).get("ports") or []
+                   if isinstance(d.get("interfaces"), dict) else []):
+            pi = {"name": str(pt.get("idx") or pt.get("name") or "?"),
+                  "link_up": (str(pt.get("state") or "").upper() == "UP") or None,
+                  "speed": f"{pt.get('speedMbps')}Mbps" if pt.get("speedMbps") else None,
+                  "poe_out": f"{pt.get('poe', {}).get('power')}W"
+                             if isinstance(pt.get("poe"), dict) and pt["poe"].get("power") else None}
+            ports.append({k: v for k, v in pi.items() if v is not None})
+        if ports:
+            dev["interfaces"] = ports
+        up = d.get("uplink") or {}
+        if up.get("deviceId"):
+            dev["_uplink_device_id"] = up["deviceId"]
+        dev["_id"] = d.get("id")
+        dev["_firmware_updatable"] = bool(d.get("firmwareUpdatable"))
+        return dev
+
+    # ---- classic /stat/device shape ----
     name = d.get("name") or d.get("hostname") or d.get("mac") or "unnamed"
     dtype = (d.get("type") or "").lower()
     state = d.get("state")
@@ -239,19 +375,19 @@ def map_device(d: dict) -> dict:
     dev = {
         "host_id": name,
         "hostname": name,
-        "mgmt_ip": d.get("ip") or d.get("ipAddress"),
+        "mgmt_ip": d.get("ip"),
         "vendor": "ubiquiti",
         "model": d.get("model_name") or d.get("model") or d.get("shortname"),
         "serial": d.get("serial"),
         "os": "UniFi",
-        "os_version": d.get("version") or d.get("firmwareVersion"),
+        "os_version": d.get("version"),
         "role": ROLE_BY_TYPE.get(dtype, "switch" if "sw" in dtype else "unknown"),
-        "reachable": state in (1, "ONLINE", "online") or d.get("state") == 1,
+        "reachable": state in (1, "ONLINE", "online"),
         "access_method": "controller",
     }
     if d.get("uptime"):
-        s = int(d["uptime"])
-        dev["uptime"] = f"{s//86400}d{(s%86400)//3600}h"
+        sec = int(d["uptime"])
+        dev["uptime"] = f"{sec//86400}d{(sec%86400)//3600}h"
     if not dev["reachable"]:
         dev["unreachable_reason"] = f"controller reports state {state!r}"
 
@@ -265,12 +401,6 @@ def map_device(d: dict) -> dict:
                 pass
     if d.get("general_temperature") is not None:
         health["temperature_c"] = d["general_temperature"]
-    total = _mb(d.get("sys_stats", {}).get("mem_total"))
-    used = _mb(d.get("sys_stats", {}).get("mem_used"))
-    if total:
-        health["memory_total_mb"] = total
-    if used:
-        health["memory_used_mb"] = used
     if d.get("total_max_power") is not None:
         health["poe_budget_w"] = d["total_max_power"]
     poe = sum((p.get("poe_power") or 0) for p in (d.get("port_table") or [])
@@ -284,13 +414,10 @@ def map_device(d: dict) -> dict:
     ports = []
     for p in d.get("port_table") or []:
         pi = {"name": str(p.get("name") or p.get("port_idx") or "?"),
-              "alias": p.get("name") if p.get("port_idx") else None,
-              "admin_up": p.get("enable", True),
-              "link_up": bool(p.get("up")),
+              "admin_up": p.get("enable", True), "link_up": bool(p.get("up")),
               "speed": f"{p.get('speed')}Mbps" if p.get("speed") else None,
               "rx_bytes": p.get("rx_bytes"), "tx_bytes": p.get("tx_bytes"),
-              "rx_errors": p.get("rx_errors"), "tx_errors": p.get("tx_errors"),
-              "rx_drops": p.get("rx_dropped"), "tx_drops": p.get("tx_dropped")}
+              "rx_errors": p.get("rx_errors"), "tx_errors": p.get("tx_errors")}
         if p.get("poe_power"):
             pi["poe_out"] = f"{p['poe_power']}W"
         ports.append({k: v for k, v in pi.items() if v is not None})
@@ -321,6 +448,16 @@ def map_wlans(wlans: list[dict], networks: list[dict]) -> list[dict]:
 
 
 def build_edges(devices: list[dict], raw: list[dict]) -> list[dict]:
+    by_id = {d.get("_id"): d["host_id"] for d in devices if d.get("_id")}
+    edges = []
+    for d in devices:
+        peer = by_id.get(d.get("_uplink_device_id"))
+        if peer and peer != d["host_id"]:
+            edges.append({"a_host": peer, "b_host": d["host_id"],
+                          "discovered_via": "controller"})
+    if edges:
+        return edges
+
     by_mac = {(d.get("mac") or "").lower(): (d.get("name") or d.get("mac")) for d in raw}
     edges = []
     for d in raw:
@@ -342,8 +479,25 @@ def build_edges(devices: list[dict], raw: list[dict]) -> list[dict]:
 
 def _open(args) -> tuple[Controller, dict]:
     entry = load_host(args.site, args.host)
+    via = args.via or entry.get("jump_host")
+    tun = None
+    if via:
+        host = entry.get("ip")
+        port = entry.get("port")
+        if not port or int(port) == 22:
+            port = 8443
+        tun = Tunnel(via, host, int(port))
+        local = tun.open()
+        print(f"tunnelling to {host}:{port} through {via}", file=sys.stderr)
+        entry = {**entry, "mgmt_url": f"https://{local}", "ip": "127.0.0.1", "port": None}
     ctrl = Controller(entry, verify=args.verify)
-    note = ctrl.connect()
+    ctrl._tunnel = tun
+    try:
+        note = ctrl.connect()
+    except SystemExit:
+        if tun:
+            print(tun.explain_dead_tunnel(), file=sys.stderr)
+        raise
     if not args.verify:
         print("NOTE: the controller's TLS certificate was NOT verified. UniFi ships a "
               "self-signed certificate, so this is normal on a LAN - but it means this "
@@ -375,6 +529,18 @@ def cmd_collect(args) -> int:
         print(f"no --unifi-site given, using {usite!r}", file=sys.stderr)
 
     raw = ctrl.devices(usite)
+    if raw and args.detail and ctrl.flavour == "integration":
+        print(f"fetching uplink detail for {len(raw)} device(s) - one request each",
+              file=sys.stderr)
+        for i, r in enumerate(raw):
+            if not r.get("id"):
+                continue
+            code, body = ctrl.get(
+                f"/proxy/network/integration/v1/sites/{usite}/devices/{r['id']}")
+            if code == 200 and isinstance(body, dict):
+                r.update({k: v for k, v in body.items() if k not in r or k == "uplink"})
+            if (i + 1) % 25 == 0:
+                print(f"  {i+1}/{len(raw)}", file=sys.stderr)
     if not raw:
         print("the controller returned no devices - wrong site id, or the credential "
               "cannot read this site", file=sys.stderr)
@@ -392,9 +558,17 @@ def cmd_collect(args) -> int:
                                 "subnet": n.get("ip_subnet")}.items() if v}
              for n in networks if n.get("vlan")]
 
+    edges = build_edges(devices, raw)
+    updatable = [d["host_id"] for d in devices if d.get("_firmware_updatable")]
+    for d in devices:                       # internal join keys, not part of the schema
+        d.pop("_id", None)
+        d.pop("_uplink_device_id", None)
+        d.pop("_firmware_updatable", None)
+
     fragment = {"generated_at": now_iso(), "unifi_site": usite,
+                "firmware_updatable": updatable,
                 "controller": ctrl.base, "api": ctrl.flavour,
-                "devices": devices, "topology_edges": build_edges(devices, raw),
+                "devices": devices, "topology_edges": edges,
                 "vlans": vlans}
 
     out = args.out or "-"
@@ -411,6 +585,8 @@ def cmd_collect(args) -> int:
         print(f"  {len(devices)} device(s): " + ", ".join(f"{n}× {r}" for r, n in sorted(counts.items())))
         print(f"  {offline} offline, {len(fragment['topology_edges'])} uplink(s), "
               f"{len(vlans)} VLAN(s), {len(wl)} SSID(s)")
+        if updatable:
+            print(f"  {len(updatable)} device(s) have a firmware update available")
     return 0
 
 
@@ -418,16 +594,26 @@ def main() -> int:
     ap = argparse.ArgumentParser(prog="netwalk_unifi.py", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--verify", action="store_true", help="verify the controller's TLS certificate")
+    ap.add_argument("--via", metavar="user@host",
+                    help="reach the controller through an SSH tunnel on this host. "
+                         "The jump host must permit LOCAL forwarding.")
     sub = ap.add_subparsers(dest="cmd", required=True)
     s = sub.add_parser("sites", help="list the sites this credential can see")
     s.add_argument("--site", required=True)
     s.add_argument("--host", required=True)
+    s.add_argument("--via", metavar="user@host", help="SSH tunnel through this host")
+    s.add_argument("--verify", action="store_true")
     s.set_defaults(func=cmd_sites)
     c = sub.add_parser("collect", help="read every adopted device into a scan-record fragment")
     c.add_argument("--site", required=True)
     c.add_argument("--host", required=True)
+    c.add_argument("--via", metavar="user@host", help="SSH tunnel through this host")
+    c.add_argument("--verify", action="store_true")
     c.add_argument("--unifi-site")
     c.add_argument("--out")
+    c.add_argument("--no-detail", dest="detail", action="store_false",
+                   help="skip the per-device detail fetch (faster, but no topology)")
+    c.set_defaults(detail=True)
     c.set_defaults(func=cmd_collect)
     args = ap.parse_args()
     return args.func(args)

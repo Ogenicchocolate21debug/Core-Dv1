@@ -26,6 +26,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 LOGO_DIR = os.path.join(os.path.dirname(HERE), "assets", "logos")
 
 NODE_W, NODE_H = 216, 96
+MAX_COLS = 8          # wrap a rank wider than this onto extra lines
+WRAP_GAP = 34         # vertical gap between the wrapped lines of one rank
 COL_GAP, ROW_GAP = 46, 108
 PAD = 40
 WAN_W, WAN_H = 200, 78
@@ -154,19 +156,27 @@ def build_layout(record: dict) -> tuple[list[dict], list[dict], dict]:
             for i, hid in enumerate(rows[rank]):
                 order[hid] = i
 
-    width = max((len(r) for r in rows.values()), default=1) * (NODE_W + COL_GAP) - COL_GAP
+    # A site with sixty access points on one rank would otherwise render as a single
+    # 14000px-wide strip - technically correct and completely unreadable. Wrap a wide
+    # rank onto several lines instead, and let the width follow the widest wrapped line.
+    max_cols = max(4, min(MAX_COLS, max((len(r) for r in rows.values()), default=1)))
+    width = max_cols * (NODE_W + COL_GAP) - COL_GAP
     wans = record.get("wan_links") or []
     wan_top = PAD + (WAN_H + 44 if wans else 0)
 
     pos: dict[str, tuple[float, float]] = {}
+    y = wan_top
     for rank in sorted(rows):
         row = rows[rank]
-        row_w = len(row) * (NODE_W + COL_GAP) - COL_GAP
-        x0 = PAD + (width - row_w) / 2
-        for i, hid in enumerate(row):
-            pos[hid] = (x0 + i * (NODE_W + COL_GAP), wan_top + rank * (NODE_H + ROW_GAP))
+        lines = [row[i:i + max_cols] for i in range(0, len(row), max_cols)] or [[]]
+        for line in lines:
+            line_w = len(line) * (NODE_W + COL_GAP) - COL_GAP
+            x0 = PAD + (width - line_w) / 2
+            for i, hid in enumerate(line):
+                pos[hid] = (x0 + i * (NODE_W + COL_GAP), y)
+            y += NODE_H + (WRAP_GAP if line is not lines[-1] else ROW_GAP)
 
-    height = wan_top + (max(rows) + 1) * (NODE_H + ROW_GAP) - ROW_GAP + PAD if rows else wan_top + PAD
+    height = y - ROW_GAP + PAD if rows else wan_top + PAD
     geom = {"width": width + 2 * PAD, "height": height, "pos": pos, "wan_top": wan_top,
             "content_w": width, "by_id": by_id, "rows": rows, "depth": depth}
     return devices, edges, geom
