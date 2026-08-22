@@ -87,7 +87,21 @@ def load_host(site: str, host: str) -> dict:
     entry = vault.get("hosts", {}).get(host)
     if not entry:
         known = ", ".join(sorted(vault.get("hosts", {}))) or "(none)"
-        die(f"host {host!r} is not in the {site!r} vault. Known: {known}", 3)
+        die(f"host {host!r} is not in the {site!r} store. Known: {known}", 3)
+
+    # The user ticked "not ours" on the login form. That is an instruction about
+    # someone else's equipment, so it is enforced here rather than left to whoever
+    # is driving the tool to remember.
+    method = entry.get("method")
+    if method == "not-ours":
+        die(f"{host!r} was marked OUT OF SCOPE on the login form - netwalk will not "
+            f"connect to it. Re-run /netwalk-login and change the answer if that was "
+            f"a mistake.", 5)
+    if method in ("unknown", "skip"):
+        state = ("the user did not recognise this device" if method == "unknown"
+                 else "the user deferred this device")
+        die(f"no credential for {host!r}: {state} on the login form. Record it as "
+            f"reachable:false with that reason and move on.", 3)
     return entry
 
 

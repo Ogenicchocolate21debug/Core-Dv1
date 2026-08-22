@@ -37,13 +37,20 @@ VENDORS = [
     "mikrotik", "cisco", "aruba", "hp", "ubiquiti", "ruckus", "fortinet",
     "tplink", "juniper", "extreme", "dell", "synology", "linux", "windows", "unknown",
 ]
+# "I don't know" has to be an answer the form can give back. A crawl finds devices
+# nobody remembers installing, and a blank card is ambiguous - did the user not know,
+# or not get to it? Saying so explicitly is a real result: it goes in the report as a
+# device the site owner could not identify, which is usually worth knowing.
 METHODS = [
     ("key", "SSH key file"),
     ("password", "SSH password"),
     ("key+password", "SSH key + enable/secondary password"),
     ("api", "HTTP API token"),
-    ("skip", "Skip this device"),
+    ("unknown", "I don't know what this device is"),
+    ("not-ours", "Not ours / out of scope — do not touch it"),
+    ("skip", "Skip for now, ask me again later"),
 ]
+NO_CREDENTIAL = ("unknown", "not-ours", "skip")
 
 KEY_MATERIAL_MARKERS = ("-----BEGIN", "PRIVATE KEY", "ssh-rsa ", "ssh-ed25519 ")
 
@@ -87,9 +94,10 @@ def write_vault(site: str, data: dict) -> tuple[Path, bool, str]:
 
 FORM_CSS = """
 :root{--bg:#f6f7f9;--card:#fff;--ink:#12151a;--muted:#5b6472;--line:#dfe3e9;
---accent:#1f6feb;--warn:#8a5a00;--warnbg:#fff8e6;--ok:#0f7b45}
+--accent:#1f6feb;--warn:#8a5a00;--warnbg:#fff8e6;--ok:#0f7b45;--okbg:#e9f7ef}
 @media (prefers-color-scheme:dark){:root{--bg:#0f1216;--card:#161a20;--ink:#e6e9ee;
---muted:#98a2b3;--line:#252b34;--accent:#4c8dff;--warn:#ffd479;--warnbg:#2a2110;--ok:#4ade80}}
+--muted:#98a2b3;--line:#252b34;--accent:#4c8dff;--warn:#ffd479;--warnbg:#2a2110;--ok:#4ade80;
+--okbg:#12261a}}
 *{box-sizing:border-box}
 body{margin:0;padding:28px 18px 64px;background:var(--bg);color:var(--ink);
 font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif}
@@ -110,6 +118,10 @@ input,select{width:100%;padding:8px 10px;border:1px solid var(--line);border-rad
 background:var(--bg);color:var(--ink);font:14px ui-monospace,SFMono-Regular,Menlo,monospace}
 input:focus,select:focus{outline:2px solid var(--accent);outline-offset:-1px}
 .hidden{display:none}
+.badge{font:600 10.5px var(--sans);padding:2px 7px;border-radius:99px;vertical-align:2px}
+.badge.done{background:var(--okbg,#e9f7ef);color:var(--ok)}
+.badge.new{background:var(--accent);color:#fff}
+.host.isnew{border-color:var(--accent)}
 .more{margin:8px 0 0;border-top:1px dashed var(--line);padding-top:8px}
 .more summary{cursor:pointer;font-size:12.5px;color:var(--muted)}
 .more .row{margin-top:10px}
@@ -146,7 +158,12 @@ document.getElementById('f').addEventListener('submit',function(e){
     c.querySelectorAll('[name^="ask::"]').forEach(function(el){
       if(el.value.trim()) skipAns[el.name.slice(5)]=el.value.trim();
     });
-    if(m==='skip'){ if(Object.keys(skipAns).length) out[id]={method:'skip',answers:skipAns}; return; }
+    if(m==='skip'||m==='unknown'||m==='not-ours'){
+      out[id]={method:m,ip:c.dataset.ip,vendor:c.dataset.vendor,
+               note:(c.querySelector('[name=note]:not([disabled])')||{}).value||'',
+               answers:skipAns};
+      return;
+    }
     var kp=g('key_path');
     if(/-----BEGIN|PRIVATE KEY/.test(kp)) bad='"'+id+'": paste the PATH to the key file, not the key itself.';
     var ans={};
@@ -186,8 +203,9 @@ def field(label: str, name: str, placeholder: str = "", type_: str = "text", whe
 
 
 def render_form(site: str, hosts: list[dict], save_url: str, existing: dict,
-                asks: list[dict] | None = None) -> str:
+                asks: list[dict] | None = None, rnd: int = 0) -> str:
     asks = asks or []
+    round_note = f" &middot; crawl round {rnd}" if rnd else ""
 
     def asks_for(hid: str) -> str:
         mine = [a for a in asks if a["host"] in (hid, "*")]
@@ -205,13 +223,20 @@ def render_form(site: str, hosts: list[dict], save_url: str, existing: dict,
     for h in hosts:
         hid = h["id"]
         known = existing.get(hid, {})
-        badge = ' <span style="color:var(--ok)">&#9679; already stored</span>' if known else ""
+        if known:
+            m = known.get("method", "")
+            label = {"unknown": "you said you did not recognise this",
+                     "not-ours": "you marked this out of scope",
+                     "skip": "you skipped this last time"}.get(m, "already answered")
+            badge = f' <span class="badge done">&#9679; {html.escape(label)}</span>'
+        else:
+            badge = ' <span class="badge new">NEW this round</span>' 
         opts = "".join(
             f'<option value="{v}"{" selected" if known.get("method") == v else ""}>{html.escape(t)}</option>'
             for v, t in METHODS
         )
         cards.append(f"""
-<div class="host" data-host="{html.escape(hid)}" data-ip="{html.escape(h.get('ip',''))}" data-vendor="{html.escape(h.get('vendor','unknown'))}">
+<div class="host{'' if known else ' isnew'}" data-host="{html.escape(hid)}" data-ip="{html.escape(h.get('ip',''))}" data-vendor="{html.escape(h.get('vendor','unknown'))}">
   <h2>{html.escape(hid)}{badge}</h2>
   <p class="meta">{html.escape(h.get('ip','no IP'))} &middot; {html.escape(h.get('vendor','unknown'))}
      {(' &middot; ' + html.escape(h['note'])) if h.get('note') else ''}</p>
@@ -226,7 +251,8 @@ def render_form(site: str, hosts: list[dict], save_url: str, existing: dict,
     {field('Enable / secondary password', 'enable_password', '', 'password', when='key+password')}
     {field('API token', 'api_token', '', 'password', when='api')}
   </div>
-  <div class="row">{field('Note (optional)', 'note', 'e.g. read-only account, jumps via 10.0.0.9', when='key password key+password api')}</div>
+  <div class="row">{field('Note (optional)', 'note', 'e.g. read-only account, jumps via 10.0.0.9', when='key password key+password api')}
+    {field('Anything you can say about it?', 'note', 'e.g. "was here when we took the site over" — helps the report', when='unknown not-ours')}</div>
   <details class="more"><summary>Access details — how to reach it (optional, not secret)</summary>
     <div class="row">{''.join(field(lbl, k, ph) for k, lbl, ph in ACCESS_FIELDS)}</div>
   </details>
@@ -239,11 +265,15 @@ def render_form(site: str, hosts: list[dict], save_url: str, existing: dict,
 <title>netwalk-login &middot; {html.escape(site)}</title><style>{FORM_CSS}</style></head><body>
 <div class="wrap">
 <h1>netwalk-login</h1>
-<p class="sub">Site <b>{html.escape(site)}</b> &middot; {len(hosts)} device(s) discovered</p>
+<p class="sub">Site <b>{html.escape(site)}</b>{round_note} &middot; {len(hosts)} device(s) on this page,
+{sum(1 for h in hosts if h["id"] not in existing)} of them new</p>
 <div class="note"><b>This page is served from your own machine (127.0.0.1) and nothing leaves it.</b>
 What you type here is written straight to a 0600 file under <code>~/.netwalk/creds/</code>.
 It is never sent to the chat, never written into a scan record, and never included in a report.
-Give a <i>path</i> to your SSH key &mdash; never paste the key itself. This receiver stops as soon as you save.</div>
+Give a <i>path</i> to your SSH key &mdash; never paste the key itself. This receiver stops as soon as you save.
+<br><br>If you do not recognise a device, say so with <b>&ldquo;I don&rsquo;t know what this is&rdquo;</b> rather
+than leaving it blank &mdash; an unidentified device on the network is a finding, and a blank card just looks
+like an unanswered question. Anything you mark <b>Not ours</b> will not be logged into at all.</div>
 <form id="f">{''.join(cards)}
 <div class="bar"><button id="go" type="submit">Save credentials</button><span id="status"></span></div>
 </form></div>
@@ -260,6 +290,7 @@ class Receiver(BaseHTTPRequestHandler):
     hosts: list[dict] = []
     existing: dict = {}
     asks: list[dict] = []
+    rnd: int = 0
     result: dict | None = None
 
     def log_message(self, fmt, *a):  # noqa: A003 - the URL carries the token; never log it
@@ -290,7 +321,7 @@ class Receiver(BaseHTTPRequestHandler):
             return self._send(404, b"not found", "text/plain")
         page = render_form(type(self).site, type(self).hosts,
                            f"/{type(self).token}/save", type(self).existing,
-                           type(self).asks)
+                           type(self).asks, type(self).rnd)
         self._send(200, page.encode(), "text/html; charset=utf-8")
 
     def do_POST(self):  # noqa: N802
@@ -327,16 +358,23 @@ class Receiver(BaseHTTPRequestHandler):
                 continue
             method = str(spec.get("method") or "").strip()
             answers = {str(k): str(v) for k, v in (spec.get("answers") or {}).items()}
-            if method in ("", "skip"):
-                # a device we cannot log into may still be the one the user answered
-                # questions about - keep the answers, drop nothing
+            if method in ("", *NO_CREDENTIAL):
+                # No credential, but the answer itself matters: "I don't know what this
+                # is" and "not ours" are results the report needs. Never fabricate a
+                # credential here and never delete one the host already had.
+                if not method:
+                    continue
+                prev = vault["hosts"].get(hid, {})
+                prev["method"] = method
+                prev.setdefault("ip", str(spec.get("ip") or "").strip())
+                prev.setdefault("vendor", str(spec.get("vendor") or "unknown").strip().lower())
+                if str(spec.get("note") or "").strip():
+                    prev["note"] = str(spec["note"]).strip()
                 if answers:
-                    prev = vault["hosts"].get(hid, {})
-                    prev.setdefault("method", "skip")
                     prev["answers"] = {**prev.get("answers", {}), **answers}
-                    prev["stored_at"] = now_iso()
-                    vault["hosts"][hid] = prev
-                    count += 1
+                prev["stored_at"] = now_iso()
+                vault["hosts"][hid] = prev
+                count += 1
                 continue
             key_path = str(spec.get("key_path") or "").strip()
             if any(m in key_path for m in KEY_MATERIAL_MARKERS):
@@ -400,6 +438,7 @@ def cmd_request(args: argparse.Namespace) -> int:
     Receiver.hosts = hosts
     Receiver.existing = existing
     Receiver.asks = asks
+    Receiver.rnd = args.round
 
     httpd = ThreadingHTTPServer(("127.0.0.1", args.port), Receiver)
     httpd.timeout = 1
@@ -481,6 +520,9 @@ def cmd_list(args: argparse.Namespace) -> int:
     rows = []
     for hid, e in sorted(vault.get("hosts", {}).items()):
         have = [k for k in ("password", "key_path", "enable_password", "api_token") if e.get(k)]
+        if e.get("method") in NO_CREDENTIAL:
+            have = [{"unknown": "not recognised", "not-ours": "OUT OF SCOPE",
+                     "skip": "deferred"}[e["method"]]]
         rows.append((hid, e.get("ip", ""), e.get("vendor", ""), e.get("method", ""),
                      e.get("username", ""), ",".join(have) or "-", e.get("note", "")))
     if not rows:
@@ -557,6 +599,8 @@ def main() -> int:
     r.add_argument("--timeout", type=int, default=900,
                    help="seconds to wait for a submit; 0 = wait until stopped")
     r.add_argument("--no-open", action="store_true", help="do not launch a browser")
+    r.add_argument("--round", type=int, default=0,
+                   help="crawl round number, shown in the form header")
     r.add_argument("--ask", action="append", default=[],
                    metavar="HOST|key|Label|placeholder",
                    help="put a question on the form instead of asking in the chat. "

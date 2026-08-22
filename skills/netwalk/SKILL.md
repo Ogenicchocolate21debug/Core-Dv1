@@ -59,7 +59,10 @@ credential wastes the whole next stage.
 ## Stage 2 — crawl (`netwalk-scan`)
 
 Run the vendor discovery pack, map the output into the scan record, then hop to every neighbour that
-has not been visited and repeat until the frontier is empty. Re-run the map and report after each
+has not been visited and repeat until the frontier is empty. Each round, put **all** the newly
+discovered devices on the login form at once (`--round N`) rather than asking about them one by one;
+the user can answer "I don't know what this is" or "not ours" per device, and both are real results
+that go in the report. Stop when a round produces nothing the user has not already ruled on. Re-run the map and report after each
 batch so the user can correct a wrong assumption early. Devices you cannot reach stay in the record
 as `reachable: false` with a reason.
 

@@ -39,6 +39,43 @@ Ask, and do not guess:
 
 Pick a site slug (`acme-hq`). Everything for the engagement lands in `~/.netwalk/sites/<slug>/` — outside the installed toolkit, so an upgrade cannot delete it.
 
+## The shape of the whole thing
+
+The crawl and the login form are one loop, not two phases. Every hop turns up devices nobody
+mentioned, and the person who knows what they are is at the browser, not in the conversation:
+
+```
+scan a device  ──►  new neighbours discovered
+      ▲                      │
+      │                      ▼
+      │            put them ALL on the login form  (netwalk_cred.py request --round N)
+      │            each card: credential, or "I don't know", or "not ours"
+      │                      │
+      └──────  read the answers back (answers) ──┘   log into what you were given
+```
+
+Run the form once per round with **every** device discovered in that round, not one at a time.
+Cards the user has already answered are marked as such and carry their previous answer; new ones
+are badged **NEW this round**. Pass `--round N` so the header says which pass this is.
+
+Three answers are not credentials and all three are useful:
+
+| The user picks | What it means | What you do |
+|---|---|---|
+| **I don't know what this device is** | it is on their network and they cannot identify it | record `reachable: false`, `unreachable_reason: "the site owner could not identify this device"`, and raise it as a finding — an unidentified device is one of the more valuable things a survey turns up |
+| **Not ours / out of scope** | someone else's equipment | never connect. `netwalk_exec.py` refuses this one in code, so you cannot do it by accident. Keep it on the diagram as a boundary device |
+| **Skip for now** | ask again later | record it, carry on, and put it back on the form next round |
+
+Read every answer back with `answers`, which prints IP, port, username, management URL, jump host,
+tenant and any question you attached — and no secret:
+
+```bash
+python3 {{TOOLKIT}}/scripts/netwalk_cred.py answers --site acme-hq
+```
+
+Keep going until a round turns up no device the user has not already ruled on. That is the
+termination condition — not "enough devices", and not "the first ring of neighbours".
+
 ## The loop
 
 For each device, in this order:

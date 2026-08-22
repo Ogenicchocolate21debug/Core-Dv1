@@ -152,11 +152,18 @@ def _(url, port):
     assert code == 400 and "key material" in str(resp), f"{code} {resp}"
 
 
-@case("an all-skipped submission saves nothing")
+@case("an empty submission is refused, but a Skip verdict is kept")
 def _(url, port):
+    # Skip used to be discarded. It is now a recorded answer - "ask me again later" is
+    # information the crawl needs. What must still be refused is a submission that
+    # carries no verdict at all.
+    code, resp = post(f"{url}/save", {"hosts": {}}, {"Origin": f"http://127.0.0.1:{port}"})
+    assert code == 400, f"empty submission was accepted: {code} {resp}"
     code, resp = post(f"{url}/save", {"hosts": {"r1": {"method": "skip"}}},
                       {"Origin": f"http://127.0.0.1:{port}"})
-    assert code == 400, f"{code} {resp}"
+    assert code == 200, f"{code} {resp}"
+    e = json.loads(Path(resp["path"]).read_text())["hosts"]["r1"]
+    assert e["method"] == "skip", e
 
 
 @case("the saved file is owner-only and the password is really in it")
@@ -238,6 +245,51 @@ def _(url, port):
     finally:
         if proc2.poll() is None:
             proc2.kill(); proc2.wait(timeout=5)
+
+
+@case("\"I don't know what this is\" is stored as a real answer")
+def _(url, port):
+    payload = {"hosts": {"mystery-box": {"method": "unknown", "ip": "10.0.0.44",
+                                         "vendor": "unknown",
+                                         "note": "was here when we took the site over"}}}
+    code, body = post(f"{url}/save", payload, {"Origin": f"http://127.0.0.1:{port}"})
+    assert code == 200, f"{code} {body}"
+    e = json.loads(Path(body["path"]).read_text())["hosts"]["mystery-box"]
+    assert e["method"] == "unknown", e
+    assert "took the site over" in (e.get("note") or ""), e
+    for secret in ("password", "key_path", "api_token"):
+        assert not e.get(secret), f"unknown stored a {secret}"
+
+
+@case("\"not ours\" is stored and the exec wrapper refuses to connect")
+def _(url, port):
+    payload = {"hosts": {"landlord-router": {"method": "not-ours", "ip": "10.0.0.45",
+                                             "vendor": "unknown",
+                                             "note": "belongs to the building"}}}
+    code, body = post(f"{url}/save", payload, {"Origin": f"http://127.0.0.1:{port}"})
+    assert code == 200, f"{code} {body}"
+    env = dict(os.environ)
+    env["NETWALK_HOME"] = str(HERE / ".tmp-netwalk-home")
+    r = subprocess.run([sys.executable, str(ROOT / "scripts" / "netwalk_exec.py"), "run",
+                        "--site", SITE, "--host", "landlord-router",
+                        "--cmd", "/system identity print"],
+                       capture_output=True, text=True, env=env)
+    assert r.returncode == 5, f"expected refusal, got rc={r.returncode}: {r.stderr}"
+    assert "OUT OF SCOPE" in r.stderr, r.stderr
+
+
+@case("the form marks which devices are new this round")
+def _(url, port):
+    proc, url, port = start(["--host", "brand-new-switch,10.0.0.99,cisco", "--round", "3"])
+    code, body = get(url)
+    assert code == 200, code
+    assert "NEW this round" in body, "new-device badge missing"
+    assert "I don&#x27;t know what this device is" in body or "I don't know what this device is" in body, \
+        "the I-don't-know option is not on the form"
+    assert "Not ours" in body, "the out-of-scope option is not on the form"
+    assert "crawl round 3" in body, "round number not shown in the header"
+    if proc.poll() is None:
+        proc.kill(); proc.wait(timeout=5)
 
 
 @case("`list` prints host metadata and never the secret")
