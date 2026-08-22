@@ -38,7 +38,10 @@ DENY  [cisco] pipes output into a file (matched /\|\s*(redirect|tee|append)\b/)
 ```
 
 The allowlist lives in `scripts/netwalk_policy.py` and is covered by `tests/test_policy.py`
-(250 cases). If you widen it, run the tests.
+(254 cases). If you widen it, run the tests.
+
+The same idea guards the address sweep: a range can only be swept once it has been authorised for
+that site by name, the check is `tests/test_sweep.py` (81 cases), and there is no override flag.
 
 **2. Credentials never touch the conversation.** `/netwalk-login` serves a one-shot page on your own
 `127.0.0.1` — random port, random URL token, JSON-only POST, cross-origin requests rejected. You
@@ -150,14 +153,32 @@ them at their own pace, and the crawl carries on. It ends when a round finds not
 not already ruled on — or when they decide the coverage is good enough. `map` and `fullreport` run
 once at the end, over whatever the loop actually reached.
 
-**Scope first.** netwalk crawls outward from one device you name. It is not a port scanner and will
-not sweep a range you did not ask for. For customer work it records what you were authorised to do,
-and the report prints it.
+**Scope first.** netwalk crawls outward from one device you name. It will also sweep an address
+range — but only one that has been authorised for that site by name, with the name of the person who
+authorised it, which then appears in the report. The check is in code, not in a prompt, and there is
+no override flag: a range outside the scope is refused, so is a supernet of an authorised range, so
+is public address space without a second explicit flag, and so is anything larger than a /16.
 
 **Then it crawls.** LLDP, CDP, MNDP, ARP, DHCP leases, routing tables and per-port MAC tables, one
 hop at a time, until there are no unvisited neighbours left. A port that has learned several MAC
 addresses but reports no LLDP neighbour is flagged as a *suspected unmanaged switch* — the thing
 that is physically there and does not announce itself.
+
+**Then it sweeps what the crawl cannot see.** A TCP-connect sweep of the authorised ranges finds the
+static-address server, the forgotten printer and the second firewall — everything that never speaks
+LLDP and never turns up in an ARP table. A *refused* connection counts as a host found, so a box with
+every port closed still appears. Roughly 68 well-known TCP ports are checked by default, and the ones
+that are a finding on their own — telnet, SMB, RDP, VNC, Redis, Winbox, a database on a user VLAN —
+are flagged as such. It is blind to UDP and to hosts that drop rather than reject, and that
+limitation is written into the report's coverage section automatically rather than left implied.
+
+**Then it checks the configuration against vendor best practice.** Not from memory — the checklist
+is data (`netwalk_audit.py guide`), so the same checks run on every site: telnet and clear-text
+management left enabled, a firewall input chain with no catch-all drop, default SNMP communities,
+RoMON and MAC-server wide open, root SSH login, no BPDU guard, an open or WEP SSID, a database
+listening on a user VLAN. It reads the config exports **off the disk**, so a config full of PSKs
+never passes through the model, and every check that could *not* run is reported by name rather
+than counted as a pass.
 
 **Then it reads health.** CPU, memory, storage, temperature, PoE budget, interface errors and CRC,
 **link-down counts**, throughput, session tables, running and failed services, and the logs. Every
@@ -196,10 +217,14 @@ netwalk/
     netwalk_exec.py              gated command runner + evidence log
     netwalk_map.py               topology SVG renderer
     netwalk_report.py            HTML report renderer + credential sweep
+    netwalk_sweep.py             authorised subnet sweep + well-known port scan
+    netwalk_audit.py             vendor hardening catalogue + the checks that read it
     netwalk_logos.py             optional vendor logo fetcher
     packs/*.txt                  per-vendor read-only command lists
   schema/netwalk-record.schema.json    the contract between collection and reporting
-  tests/test_policy.py           250 allow/deny cases
+  tests/test_policy.py           254 allow/deny cases
+  tests/test_sweep.py            81 cases over the sweep scope gate
+  tests/test_audit.py            49 cases, every check tested vulnerable AND hardened
   examples/example-scan.json     a complete record you can render without touching a network
 ```
 

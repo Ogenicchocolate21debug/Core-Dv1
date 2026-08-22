@@ -9,7 +9,7 @@ Replace `<TOOLKIT>` below with wherever you cloned this repository.
 
 ---
 
-## The two promises, and why they are not optional
+## The three promises, and why they are not optional
 
 **1. netwalk never changes a device.** Every command is checked against a per-vendor read-only
 allowlist in `scripts/netwalk_policy.py` *before it is sent*. Config writes, counter clears,
@@ -22,8 +22,16 @@ own `127.0.0.1` by `scripts/netwalk_cred.py`, stored in a private file, and read
 wrapper — never by you. Do not ask for a password in chat, do not accept one if offered, and never
 open `~/.netwalk/creds/*.json`. You do not need the value; you pass a site slug and a host id.
 
+**3. netwalk never sweeps a range nobody authorised.** The address sweep in
+`scripts/netwalk_sweep.py` refuses any range that is not written into the site's `scope.json` with
+the name of the person who authorised it. A supernet of an authorised range is refused, public
+address space needs a second explicit flag, anything larger than a /16 is refused outright, and
+there is no `--force`. Crawling from a device the user gave you a credential for is one thing;
+probing addresses nobody named is another, and in several places netwalk gets used it is an offence.
+
 If a read-only command is wrongly blocked, add it to the allowlist, run
 `python3 <TOOLKIT>/tests/test_policy.py`, and say that you did. Never route around the wrapper.
+The same rule applies to the sweep gate: get the authorisation, do not edit the scope file yourself.
 
 ---
 
@@ -31,7 +39,8 @@ If a read-only command is wrongly blocked, add it to the allowlist, run
 
 ```bash
 python3 <TOOLKIT>/install.py --check          # environment report
-python3 <TOOLKIT>/tests/test_policy.py        # 250 read-only cases
+python3 <TOOLKIT>/tests/test_policy.py        # 254 read-only cases
+python3 <TOOLKIT>/tests/test_sweep.py         # 81 sweep-scope cases
 python3 <TOOLKIT>/scripts/netwalk_cred.py  serve  --site S --host 'id,ip,vendor,note'
 python3 <TOOLKIT>/scripts/netwalk_cred.py  add    --site S --host '...' --ask 'HOST|key|Label|hint'
 python3 <TOOLKIT>/scripts/netwalk_cred.py  answers --site S
@@ -39,6 +48,10 @@ python3 <TOOLKIT>/scripts/netwalk_exec.py  probe  --site S --host H
 python3 <TOOLKIT>/scripts/netwalk_exec.py  run    --site S --host H --cmd-file packs/<vendor>.discovery.txt
 python3 <TOOLKIT>/scripts/netwalk_unifi.py collect --site S --host H --out unifi.json
 python3 <TOOLKIT>/scripts/netwalk_omada.py info    --site S --host H
+python3 <TOOLKIT>/scripts/netwalk_sweep.py authorize --site S --range 10.2.30.0/24 --authorized-by 'who said yes'
+python3 <TOOLKIT>/scripts/netwalk_sweep.py hosts   --site S --range 10.2.30.0/24
+python3 <TOOLKIT>/scripts/netwalk_sweep.py ports   --site S --target 10.2.30.99
+python3 <TOOLKIT>/scripts/netwalk_sweep.py record  --site S --record record.json
 python3 <TOOLKIT>/scripts/netwalk_map.py    record.json -o map.svg
 python3 <TOOLKIT>/scripts/netwalk_report.py record.json -o report.html [--public]
 ```
@@ -84,7 +97,7 @@ them at their own pace, and the crawl carries on. It ends when a round finds not
 not already ruled on — or when they decide the coverage is good enough. `map` and `fullreport` run
 once at the end, over whatever the loop actually reached.
 
-### The two promises
+### The three promises
 
 1. **Read-only.** Every command is checked against a per-vendor allowlist in
    `scripts/netwalk_policy.py` before it is sent. Config writes, counter clears, service restarts
@@ -94,16 +107,21 @@ once at the end, over whatever the loop actually reached.
    carries the *access* questions: which URL, which port, which jump host, which controller site. When
    you are blocked on how to reach something, put the question on the form with `--ask` and let the
    user answer it there, rather than asking across several conversational turns.
+3. **No unauthorised sweeping.** `netwalk_sweep.py` refuses any address range that is not in
+   the site's `scope.json` with the name of whoever authorised it. There is no override flag.
+   Crawling from a device you were given a credential for is not the same as probing addresses
+   nobody named.
 
-Both are enforced in code. Do not route around either. If a read-only command is wrongly blocked,
+All three are enforced in code. Do not route around any of them. If a read-only command is wrongly blocked,
 add it to the allowlist, run `python3 <TOOLKIT>/tests/test_policy.py`, and say you did.
 
 ### Stage 0 — scope it
 
 Before running anything:
 
-- **What is the target?** netwalk needs one device it can log into and crawls out from there. It is
-  not a port scanner and will not sweep a range the user has not named.
+- **What is the target?** netwalk needs one device it can log into and crawls out from there. It can
+  also sweep an address range, but only after the owner has authorised that range by name
+  (`netwalk_sweep.py authorize`) — the gate is enforced in code and has no override.
 - **Whose network is it?** For a customer site, confirm the user is authorised to log into this
   equipment today, and write what they say into `site.scope_note`. It appears in the report.
 - **What is off limits?** Fragile boxes, maintenance windows, devices to leave alone. Record them
@@ -147,6 +165,22 @@ the user can answer "I don't know what this is" or "not ours" per device, and bo
 that go in the report. Stop when a round produces nothing the user has not already ruled on. Re-run the map and report after each
 batch so the user can correct a wrong assumption early. Devices you cannot reach stay in the record
 as `reachable: false` with a reason.
+
+**Sweep the subnets the crawl walked through**, once the owner has authorised them by name. The
+crawl only finds what announces itself; a sweep finds the static-address server and the forgotten
+printer, and it is usually where the surprises are:
+
+```bash
+python3 <TOOLKIT>/scripts/netwalk_sweep.py authorize --site <slug> --range 10.2.30.0/24 \
+  --authorized-by "who said yes, and when"
+python3 <TOOLKIT>/scripts/netwalk_sweep.py hosts  --site <slug> --range 10.2.30.0/24
+python3 <TOOLKIT>/scripts/netwalk_sweep.py ports  --site <slug> --target 10.2.30.99
+python3 <TOOLKIT>/scripts/netwalk_sweep.py record --site <slug> --record <record>.json
+```
+
+Everything that answers and is not already a device goes back onto the login form — it is another
+round of the same loop, not a separate exercise. The sweep is TCP-only and therefore blind to UDP
+and to hosts that drop rather than reject; `record` writes that into `coverage.not_covered`.
 
 ### Stage 3 — diagnose (`netwalk-diag`)
 
@@ -194,10 +228,9 @@ Records accumulate one per scan date, so two surveys of one site diff cleanly.
 
 - Change anything on a surveyed device. Report the fix; the owner applies it.
 - Accept a credential in the conversation, or open the credential store yourself.
-- Scan outside the agreed scope.
+- Scan or sweep outside the agreed scope. A range the owner has not authorised by name is refused
+  by `netwalk_sweep.py`, and that refusal is the correct answer, not an obstacle.
 - Present an incomplete crawl as complete.
-
----
 
 
 ## `netwalk-login`
@@ -359,7 +392,7 @@ and exits. Nothing is transmitted off the machine and nothing passes through you
 | I know what it is, no login | they can identify it but cannot give access | Fill in what it is, its role, what it is for and who owns it. The device is then documented in the report as a known device that was not surveyed - far more useful than a blank, and it gets a proper `role` on the diagram |
 | Skip | you do not have access and are not getting it | The device stays in the record as `reachable: false` with a reason. Any questions on that card are still saved, and an existing credential is left alone — use `forget` to remove one. That is a legitimate result: say so in the report rather than leaving a gap. |
 
-### Controller credentials
+#### Controller credentials
 
 | Controller | Username field | API token field | Where the user finds it |
 |---|---|---|---|
@@ -426,8 +459,6 @@ copy-on-write filesystem. If the credentials were sensitive, tell the user to ro
 
 Next: `netwalk-scan` to crawl, or `netwalk-diag` if you already have the topology.
 
----
-
 
 ## `netwalk-scan`
 
@@ -457,8 +488,8 @@ a different command, or add it to the allowlist in `scripts/netwalk_policy.py`, 
 Ask, and do not guess:
 
 1. **What is the target?** An entry device (IP), a subnet, a site name, "my whole office"? You need
-   at least one device you can log into. netwalk crawls *from* a device; it is not a port scanner
-   and does not sweep ranges the user has not named.
+   at least one device you can log into — netwalk crawls *from* a device. It can also sweep an
+   address range, but only one the owner has explicitly authorised; see **Sweeping a range** below.
 2. **Whose network is it?** If it is a customer's, confirm the user is authorised to log into this
    equipment today. Record what they say in `site.scope_note` — it goes in the report.
 3. **Anything off limits?** Production boxes that must not even be logged into, a maintenance
@@ -591,6 +622,64 @@ For each device, in this order:
    user answers in the browser in one pass. Asking them one at a time in the chat is the slow way,
    and the answers are not secrets so `answers` reads them straight back.
 
+### Sweeping a range
+
+The crawl finds the managed estate — whatever speaks LLDP, appears in an ARP table, or holds a DHCP
+lease. It misses the printer nobody remembers, the old server on a static address, the second
+firewall someone left plugged in. A sweep is the other half of the picture, and on most sites it is
+where the surprises are.
+
+**It cannot run until the owner has authorised the range, by name.** That is enforced in code:
+
+```bash
+python3 <TOOLKIT>/scripts/netwalk_sweep.py authorize --site acme-hq \
+  --range 10.2.30.0/24 --range 10.2.40.0/24 \
+  --authorized-by "Khun Somchai, IT manager, by phone 2026-08-22" \
+  --exclude 10.2.30.99          # a box he asked us to leave alone
+```
+
+The name goes in `scope.json` and comes out again in the report. There is no `--force`: a range
+outside the scope is refused, a supernet of an authorised range is refused, public address space
+needs a second explicit flag, and anything larger than a /16 is refused outright. If you find
+yourself wanting to get past the gate, the answer is to ask the owner, not to edit the file.
+
+```bash
+# which addresses answer at all - TCP connect to a few common ports, plus one ping
+python3 <TOOLKIT>/scripts/netwalk_sweep.py hosts --site acme-hq --range 10.2.30.0/24
+
+# what those addresses are listening on - ~68 well-known TCP ports by default
+python3 <TOOLKIT>/scripts/netwalk_sweep.py ports --site acme-hq --target 10.2.30.99 \
+  --profile standard            # or --profile quick, or --ports 22,80,8000-8010
+
+# fold the results into the scan record and list what is not in devices[] yet
+python3 <TOOLKIT>/scripts/netwalk_sweep.py record --site acme-hq \
+  --record ~/.netwalk/sites/acme-hq/scan-2026-08-22.json
+```
+
+Three things to know before you read the output:
+
+- **A refused connection proves a host is there**, exactly as well as an open one does. A box with
+  every port closed still appears in the results, and that is deliberate.
+- **The sweep is blind to UDP.** SNMP, DNS over UDP, IPMI, syslog and IKE do not show up at all, and
+  neither does a host whose firewall drops instead of rejecting. `record` writes that limitation
+  into `coverage.not_covered` for you. Do not let the report imply the list is exhaustive.
+- **Ports carry a `risk` note when finding them open is a finding by itself** — telnet, SMB, RDP,
+  VNC, Redis, Winbox, a database answering on a user VLAN. `ports` prints them; you still have to
+  write them into `findings[]` with the port as evidence.
+
+**Where the sweep runs from matters.** By default it runs from your machine, so it only sees what
+your machine can route to — a management VLAN you are not on will look empty rather than absent:
+
+| Situation | What to use |
+|---|---|
+| you are on the LAN, or on a VPN into it | the default, no extra flags |
+| the range is only reachable from inside the site | `--via user@linux-host` — an `ssh -D` SOCKS tunnel through a Linux box you already have a credential for |
+| the only way in is a MikroTik | RouterOS refuses dynamic forwarding, so `--via` cannot work. Run the sweep on the router instead: `netwalk_exec.py run --cmd '/tool ip-scan address-range=10.2.30.0/24 duration=30s'` — the allowlist requires `duration=`, so it cannot run unbounded |
+
+Every address that answers and is not already in `devices[]` goes on the credential form, including —
+especially — the ones you cannot identify. `record` prints that list for you. The rule from the
+crawl applies unchanged here: an unrecognised host is not evidence the host is dull.
+
 ### Deriving topology
 
 `topology_edges` is what the diagram is drawn from, so build it deliberately rather than dumping
@@ -630,14 +719,13 @@ keeps the report honest.
 ### Never
 
 - Change configuration. Report the fix; the site owner applies it.
-- Scan an address range the user did not name, or hop into a device outside the agreed scope.
+- Sweep a range that is not in `scope.json`, or hop into a device outside the agreed scope. If the
+  gate refuses a range, get the owner's authorisation and record it — never route around it.
 - Put a credential anywhere in the scan record.
 - Present an incomplete crawl as complete.
 
 Next: `netwalk-diag` for health and root cause, `netwalk-map` for the diagram,
 `netwalk-fullreport` for the deliverable.
-
----
 
 
 ## `netwalk-diag`
@@ -675,8 +763,19 @@ python3 $T/scripts/netwalk_exec.py run --site acme-hq --host gw01 \
 ```
 
 Packs: `mikrotik`, `cisco`, `aruba`, `hp`, `fortinet`, `linux`, `windows`, each with a
-`.config.txt` and a `.health.txt`. Record the exported config path in `config_export_path` —
-relative to the site folder, never pasted into the report.
+`.config.txt`, a `.health.txt` and a `.security.txt`. Record the exported config path in
+`config_export_path` — relative to the site folder, never pasted into the report.
+
+Run the security pack too, and run it with `--out` — it deliberately pulls the parts of the
+configuration that hold community strings and key material, so its output must land on disk
+rather than in the conversation:
+
+```bash
+python3 $T/scripts/netwalk_exec.py run --site acme-hq --host gw01 \
+  --cmd-file $T/scripts/packs/mikrotik.security.txt \
+  --out ~/.netwalk/sites/acme-hq/configs/gw01.security.txt \
+  --evidence ~/.netwalk/sites/acme-hq/evidence.jsonl
+```
 
 **Always use `--out` for a config export.** With `--out` the full text is written straight to a
 0600 file and only a one-line summary is printed. Without it, the whole config comes back through
@@ -690,7 +789,7 @@ read is survivable — but that is a safety net, not the control. The control is
 Record the export path in `config_export_path`. Never `cat` it, never paste it into the record, and
 warn the user before they forward it to anyone.
 
-### What to pull, whatever the vendor
+#### What to pull, whatever the vendor
 
 | Area | What matters | Why |
 |---|---|---|
@@ -728,11 +827,45 @@ Read the numbers before reaching for a story:
 - **Do not invent severity.** `critical` = it is broken or actively unsafe now. `high` = it will
   break or is exploitable. `medium` = real risk, not urgent. `low`/`info` = hygiene.
 
-Security observations belong here too — management services answering on a WAN interface, default
-or shared accounts, SNMP v1/v2c with a guessable community, an open or WEP SSID, a guest network
-with no client isolation, unsupported firmware with known CVEs. Record them as findings with
-`category: "security"`; mark anything you would not want in a customer-facing copy
-`public_safe: false`.
+### 2b. Hardening — run the catalogue, do not rely on remembering
+
+Health is about what is broken. Hardening is about what is configured against the vendor's own
+advice, and it is not left to memory: `netwalk_audit.py` holds the checklist as data, so the same
+checks run on every site whether or not anyone thought of them.
+
+```bash
+python3 $T/scripts/netwalk_audit.py guide --vendor mikrotik      # the checklist itself
+python3 $T/scripts/netwalk_audit.py run --site acme-hq \
+  --record ~/.netwalk/sites/acme-hq/scan-2026-08-22.json --dry-run
+```
+
+`run` reads the config exports **off the disk** and writes findings into `findings[]`. The config
+text never passes through you; the excerpt attached to each finding is one line, redacted. Drop
+`--dry-run` to write.
+
+Three things about the output matter more than the findings themselves:
+
+- **`NOT CHECKED` is part of the result.** A device with no export on disk, a check whose command is
+  missing from the pack output, and every manual item are all listed by name and written into
+  `coverage.not_covered`. Repeat them in the report. A hardening section that shows six findings and
+  hides that ten checks never ran is worse than no hardening section.
+- **A `config_absent` check is `confidence: "suspected"`.** It fires on the *absence* of a line, and
+  absence can mean "not configured" or "not in the part of the config we pulled". Read it before
+  you put it in front of a customer.
+- **Every finding is `public_safe: false` by default.** A hardening list is a route map. Promote one
+  to the public copy only deliberately.
+
+The catalogue does not replace judgement. Anything you spot that it has no check for still belongs
+in `findings[]` with `category: "security"` — and if it is a class of problem rather than a one-off,
+add a check to `netwalk_audit.py`, run `python3 $T/tests/test_audit.py`, and it is closed for every
+future site instead of just this one.
+
+#### The baseline
+
+Checks come from the vendor's own hardening guidance plus what actually goes wrong on sites, and
+each check names the guidance it came from. Where a vendor publishes no guidance worth citing, the
+check says it is common practice rather than dressing itself up as a standard.
+
 
 ### 3. Write findings into the record
 
@@ -770,8 +903,6 @@ what the data does *not* explain. Then `netwalk-fullreport` turns it into the de
 - Clear a counter or a log. That destroys the evidence the next engineer needs.
 - Report a finding you cannot point at evidence for.
 - Copy a config export, PSK, community string or password hash into the report.
-
----
 
 
 ## `netwalk-map`
@@ -890,8 +1021,6 @@ device gets a lettered chip.
 - **Text clipped** — long hostnames are truncated on purpose to keep boxes uniform; the full name is
   in the report's inventory table.
 
----
-
 
 ## `netwalk-fullreport`
 
@@ -986,11 +1115,26 @@ Give them the paths, say which mode each file is, and say plainly what is missin
 stopped early or three devices were unreachable, that goes in your message as well as in the
 report — do not let a polished document imply a completeness the scan did not have.
 
+**Say where the survey left its sensitive files, every time.** The full report renders a *Where this
+survey left sensitive files* box in the Method section — the path to the credential store, the path
+to the config exports, and the fact that netwalk deletes neither of them by itself. Repeat it in
+your message rather than assuming they read that box:
+
+- `~/.netwalk/creds/<slug>.json` — the credentials they typed into the login form, plain JSON,
+  file-permission protected and **not encrypted**. It survives the engagement until someone runs
+  `netwalk_cred.py forget --site <slug>`, on **every machine the survey ran from** — a survey driven
+  from two boxes leaves two copies.
+- `~/.netwalk/sites/<slug>/configs/` — full config exports, containing PSKs, SNMP communities and
+  password hashes in clear text.
+
+Then offer to clear the credential store there and then. If any of those credentials are sensitive,
+say that deleting is not the same as rotating: the shred overwrites the file, which on an SSD or a
+copy-on-write filesystem is not a guarantee. The box appears in the full copy only — a customer
+reading the public copy has no business learning where the engineer keeps their passwords.
+
 ### Never
 
 - Send or upload the report anywhere. Produce the file, hand over the path, let the user decide who
   sees it.
 - Put credentials, config exports, PSKs or password hashes in it.
 - Present a partial survey as a complete one.
-
----
