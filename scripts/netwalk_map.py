@@ -519,7 +519,12 @@ def plan_edges(edges: list[dict], geom: dict) -> list[dict]:
     return plans
 
 
-def edge_svg(p: dict, geom: dict) -> str:
+def edge_svg(p: dict, geom: dict) -> tuple[str, list[dict]]:
+    """Return the link's path and the labels it wants, separately.
+
+    Labels are placed later, once every line is on the page, because a port name is
+    only useful if something else has not been printed on top of it.
+    """
     pos = geom["pos"]
     ax, ay = pos[p["a"]]
     bx, by = pos[p["b"]]
@@ -534,31 +539,30 @@ def edge_svg(p: dict, geom: dict) -> str:
     e_off = p.get("e_off", (NODE_H if lr else NODE_W) / 2)
 
     if p["sibling"]:
-        if lr:                       # stacked in one column: join top to bottom
+        if lr:
             sx, sy = ax + NODE_W / 2, (ay + NODE_H) if by > ay else ay
             ex, ey = bx + NODE_W / 2, by if by > ay else (by + NODE_H)
             d = f"M{sx:.1f},{sy:.1f} V{ey:.1f}"
-            pa, pb = (sx + 5, sy + 12), (ex + 5, ey - 5)
+            pa, pb = (sx + 6, sy + 13, "start"), (ex + 6, ey - 7, "start")
         else:
             sy = ey = ay + NODE_H / 2
             sx, ex = (ax + NODE_W, bx) if bx >= ax else (ax, bx + NODE_W)
             d = f"M{sx:.1f},{sy:.1f} H{ex:.1f}"
-            pa = (sx + (4 if ex > sx else -34), sy - 7)
-            pb = (ex + (-34 if ex > sx else 4), ey - 7)
-        lx, ly = (sx + ex) / 2, (sy + ey) / 2 - 6
+            pa = (sx + 6, sy - 8, "start")
+            pb = (ex - 6, ey - 8, "end")
+        lx, ly, lanchor = (sx + ex) / 2, (sy + ey) / 2 + 4, "middle"
     elif lr:
         sx, sy = ax + NODE_W, ay + s_off
         ex, ey = bx, by + e_off
-        spread = min(RANK_GAP - 40, 16 * max(p.get("lanes", 1) - 1, 0))
+        spread = min(RANK_GAP - 44, 14 * max(p.get("lanes", 1) - 1, 0))
         base = sx + (RANK_GAP - spread) / 2
         mid = base + spread * (p.get("lane", 0) / max(p.get("lanes", 1) - 1, 1)
                                if p.get("lanes", 1) > 1 else 0)
         d = (f"M{sx:.1f},{sy:.1f} H{mid:.1f} V{ey:.1f} H{ex:.1f}" if abs(ey - sy) > 1
              else f"M{sx:.1f},{sy:.1f} H{ex:.1f}")
-        # port names go above the line, the link label below it - otherwise a short
-        # horizontal run prints "to Mikrotik" straight through "2-port LAG"
-        pa, pb = (sx + 5, sy - 6), (ex - 5, ey - 6)
-        lx, ly = (sx + ex) / 2, max(sy, ey) + 13
+        pa, pb = (sx + 7, sy - 6, "start"), (ex - 7, ey - 6, "end")
+        # the link's own label goes on the far horizontal run, where only this link is
+        lx, ly, lanchor = (mid + ex) / 2, ey - 6, "middle"
     else:
         sx, sy = ax + s_off, ay + NODE_H
         ex, ey = bx + e_off, by
@@ -568,21 +572,59 @@ def edge_svg(p: dict, geom: dict) -> str:
                                if p.get("lanes", 1) > 1 else 0)
         d = (f"M{sx:.1f},{sy:.1f} V{mid:.1f} H{ex:.1f} V{ey:.1f}" if abs(ex - sx) > 1
              else f"M{sx:.1f},{sy:.1f} V{ey:.1f}")
-        pa, pb = (sx + 4, sy + 13 + p.get("lane", 0) * 11), (ex + 4, ey - 6)
-        lx, ly = (sx + ex) / 2, mid - 5
+        pa, pb = (sx + 5, sy + 14, "start"), (ex + 5, ey - 7, "start")
+        lx, ly, lanchor = (sx + ex) / 2, mid - 6, "middle"
 
-    out = [f'<path class="{cls}" d="{d}"/>']
-    anchor = ' text-anchor="end"' if (lr and not p["sibling"]) else ""
+    labels = []
     if p["ap"]:
-        out.append(f'<text class="port" x="{pa[0]:.1f}" y="{pa[1]:.1f}">'
-                   f'{esc(fit(p["ap"], 9.5, 96, mono=True))}</text>')
+        labels.append({"x": pa[0], "y": pa[1], "anchor": pa[2], "cls": "port",
+                       "text": fit(p["ap"], 9.5, 104, mono=True), "px": 9.5,
+                       "mono": True, "prio": 0})
     if p["bp"]:
-        out.append(f'<text class="port"{anchor} x="{pb[0]:.1f}" y="{pb[1]:.1f}">'
-                   f'{esc(fit(p["bp"], 9.5, 96, mono=True))}</text>')
-    label = " \u00b7 ".join(x for x in [e.get("speed"), e.get("note")] if x)
-    if label:
-        out.append(f'<text class="linklabel" x="{lx:.1f}" y="{ly:.1f}">'
-                   f'{esc(fit(label, 9.5, 130))}</text>')
+        labels.append({"x": pb[0], "y": pb[1], "anchor": pb[2], "cls": "port",
+                       "text": fit(p["bp"], 9.5, 104, mono=True), "px": 9.5,
+                       "mono": True, "prio": 0})
+    note = " \u00b7 ".join(x for x in [e.get("speed"), e.get("note")] if x)
+    if note:
+        labels.append({"x": lx, "y": ly, "anchor": lanchor, "cls": "linklabel",
+                       "text": fit(note, 9.5, 140), "px": 9.5, "mono": False, "prio": 1})
+    return f'<path class="{cls}" d="{d}"/>', labels
+
+
+def place_labels(labels: list[dict], obstacles: list[tuple] | None = None) -> str:
+    """Draw labels so they do not sit on top of each other.
+
+    Port names come first because they carry the most information per pixel; a link's
+    speed or note gives way. Anything that still cannot find clear space is dropped
+    rather than printed as an unreadable overlap - the same fact is in the report's
+    tables, and a diagram that lies about being legible is worse than one that leaves
+    a label out.
+    """
+    # Device boxes are obstacles, not just other labels: a port name printed across a
+    # node's chips is exactly as unreadable as one printed across another label.
+    placed: list[tuple[float, float, float, float]] = list(obstacles or [])
+    out, dropped = [], 0
+
+    def box(l, y):
+        w = text_w(l["text"], l["px"], l["mono"]) + 6
+        x = l["x"] - (w / 2 if l["anchor"] == "middle" else w if l["anchor"] == "end" else 0)
+        return (x, y - l["px"] - 1, x + w, y + 3)
+
+    def clash(b):
+        return any(not (b[2] <= o[0] or b[0] >= o[2] or b[3] <= o[1] or b[1] >= o[3])
+                   for o in placed)
+
+    for l in sorted(labels, key=lambda l: (l["prio"], l["y"], l["x"])):
+        for dy in (0, -12, 12, -24, 24, -36, 36):
+            b = box(l, l["y"] + dy)
+            if not clash(b):
+                placed.append(b)
+                anchor = f' text-anchor="{l["anchor"]}"' if l["anchor"] != "start" else ""
+                out.append(f'<text class="{l["cls"]}"{anchor} x="{l["x"]:.1f}" '
+                           f'y="{l["y"] + dy:.1f}">{esc(l["text"])}</text>')
+                break
+        else:
+            dropped += 1
     return "".join(out)
 
 
@@ -614,19 +656,21 @@ CSS = """
 .wan-title{font:600 13px var(--nw-sans);fill:var(--nw-ink)}
 .wan-ip{font:12px var(--nw-mono);fill:var(--nw-accent)}
 .wan-meta{font:10.5px var(--nw-sans);fill:var(--nw-muted)}
-.port{font:9.5px var(--nw-mono);fill:var(--nw-muted)}
-.linklabel{font:9.5px var(--nw-sans);fill:var(--nw-muted);text-anchor:middle}
+.port,.linklabel{paint-order:stroke fill;stroke:var(--nw-halo);stroke-width:3.5;
+stroke-linejoin:round}
+.port{font:9.5px var(--nw-mono);fill:var(--nw-ink)}
+.linklabel{font:italic 9.5px var(--nw-sans);fill:var(--nw-muted)}
 .caption{font:11px var(--nw-sans);fill:var(--nw-muted)}
 """
 
 TOKENS_LIGHT = """--nw-bg:#ffffff;--nw-card:#ffffff;--nw-line:#d8dee6;--nw-line-strong:#9aa6b4;
 --nw-ink:#12151a;--nw-muted:#66707d;--nw-accent:#1f6feb;--nw-chip:#eef1f5;
---nw-bad:#c0392b;--nw-badbg:#fdeceb;--nw-wan:#f2f7ff;--nw-logo:#39424d;
+--nw-bad:#c0392b;--nw-badbg:#fdeceb;--nw-wan:#f2f7ff;--nw-logo:#39424d;--nw-halo:#ffffff;
 --nw-sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif;
 --nw-mono:ui-monospace,SFMono-Regular,Menlo,monospace"""
 TOKENS_DARK = """--nw-bg:#0f1216;--nw-card:#171c22;--nw-line:#2a323c;--nw-line-strong:#4a5563;
 --nw-ink:#e7ebf0;--nw-muted:#93a0b0;--nw-accent:#5b9dff;--nw-chip:#222a33;
---nw-bad:#ff7b6b;--nw-badbg:#3a1f1c;--nw-wan:#13202f;--nw-logo:#b6c2d0"""
+--nw-bad:#ff7b6b;--nw-badbg:#3a1f1c;--nw-wan:#13202f;--nw-logo:#b6c2d0;--nw-halo:#0f1216"""
 
 
 def render(record: dict, public: bool = False, title: str | None = None,
@@ -651,13 +695,33 @@ def render(record: dict, public: bool = False, title: str | None = None,
     w, h = geom["width"], geom["height"] + 26
     body = [f'<rect class="bg" width="{w}" height="{h}"/>'] if standalone else []
     body.append(wan_svg(record.get("wan_links") or [], geom))
+    labels: list[dict] = []
     for plan in plan_edges(edges, geom):
-        body.append(edge_svg(plan, geom))
+        path, ls = edge_svg(plan, geom)
+        body.append(path)
+        labels += ls
     for d in devices:
         if d["host_id"] in geom["pos"]:
             x, y = geom["pos"][d["host_id"]]
             body.append(node_svg(d, x, y, public))
-    caption = f"{heading} · {len(devices)} device(s), {len(edges)} link(s)"
+
+    # Labels go on last, once every line and every box exists, so placement can see
+    # what it has to avoid.
+    obstacles = [(x, y, x + NODE_W, y + NODE_H) for x, y in geom["pos"].values()]
+    if record.get("wan_links"):
+        span = (WAN_H + 30) if orient == "lr" else (WAN_W + 46)
+        total = len(record["wan_links"]) * span - (30 if orient == "lr" else 46)
+        st = PAD + (geom["cross"] - total) / 2
+        for i in range(len(record["wan_links"])):
+            wx, wy = (PAD, st + i * span) if orient == "lr" else (st + i * span, PAD)
+            obstacles.append((wx, wy, wx + WAN_W, wy + WAN_H))
+    body.append(place_labels(labels, obstacles))
+
+    shown = len(devices)
+    caption = (f"{heading} · {total_devices} device(s)"
+               + (f", access points grouped per switch into {shown} nodes"
+                  if shown != total_devices else "")
+               + f" · {len(edges)} link(s)")
     if sub:
         caption += " · " + " · ".join(sub)
     body.append(f'<text class="caption" x="{PAD}" y="{h - 8}">{esc(caption)}</text>')
