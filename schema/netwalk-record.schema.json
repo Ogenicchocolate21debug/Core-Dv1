@@ -1,0 +1,373 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://netwalk.local/schema/netwalk-record.schema.json",
+  "title": "Netwalk Scan Record",
+  "description": "Single source of truth for one netwalk run against one site. Written by netwalk-scan/netwalk-diag, read by netwalk-map/netwalk-report. MUST NOT contain any credential material - see 'forbidden_keys' enforcement in scripts/netwalk_report.py.",
+  "type": "object",
+  "required": ["site", "scanned_at", "devices"],
+  "additionalProperties": false,
+  "properties": {
+    "site": {
+      "type": "object",
+      "required": ["id", "name"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string", "description": "slug, e.g. 002030-chokechai"},
+        "name": {"type": "string"},
+        "customer": {"type": "string"},
+        "address": {"type": "string"},
+        "contact": {"type": "string", "description": "site contact NAME/role only - no phone/email unless the user asks"},
+        "engineer": {"type": "string", "description": "who ran the scan"},
+        "scope_note": {"type": "string", "description": "what the customer authorised us to touch"}
+      }
+    },
+    "scanned_at": {"type": "string", "description": "ISO8601 local time the run started"},
+    "entry_point": {
+      "type": "object",
+      "description": "the one device the user handed us; everything else was crawled from here",
+      "additionalProperties": false,
+      "properties": {
+        "host_id": {"type": "string"},
+        "ip": {"type": "string"},
+        "how": {"type": "string", "enum": ["ssh", "api", "romon", "winbox", "serial", "controller", "manual-paste"]}
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "description": "honest accounting of what the crawl did and did NOT reach",
+      "additionalProperties": false,
+      "properties": {
+        "hops_completed": {"type": "integer"},
+        "devices_reachable": {"type": "integer"},
+        "devices_unreachable": {"type": "integer"},
+        "stopped_early": {"type": "boolean"},
+        "stopped_reason": {"type": "string"},
+        "not_covered": {
+          "type": "array",
+          "description": "anything a reader might assume was checked but wasn't",
+          "items": {"type": "string"}
+        }
+      }
+    },
+    "devices": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/device"}
+    },
+    "topology_edges": {
+      "type": "array",
+      "description": "derived link list used by netwalk-map. One entry per physical link.",
+      "items": {
+        "type": "object",
+        "required": ["a_host", "b_host"],
+        "additionalProperties": false,
+        "properties": {
+          "a_host": {"type": "string"},
+          "a_port": {"type": "string"},
+          "b_host": {"type": "string"},
+          "b_port": {"type": "string"},
+          "discovered_via": {"type": "string", "enum": ["lldp", "cdp", "mndp", "arp", "routing", "controller", "user-stated", "inferred"]},
+          "speed": {"type": "string"},
+          "note": {"type": "string"}
+        }
+      }
+    },
+    "wan_links": {
+      "type": "array",
+      "description": "one entry per internet uplink - never merge into a single INTERNET cloud",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "isp": {"type": "string"},
+          "on_host": {"type": "string"},
+          "interface": {"type": "string"},
+          "ip": {"type": "string"},
+          "gateway": {"type": "string"},
+          "link_speed": {"type": "string"},
+          "type": {"type": "string", "enum": ["fiber", "docsis", "dsl", "lte", "5g", "leased-line", "starlink", "unknown"]},
+          "role": {"type": "string", "enum": ["primary", "backup", "load-balanced", "unknown"]}
+        }
+      }
+    },
+    "findings": {
+      "type": "array",
+      "description": "problems, from netwalk-diag analysis. Evidence is mandatory - no finding without the observation that produced it.",
+      "items": {
+        "type": "object",
+        "required": ["severity", "title", "evidence"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {"type": "string"},
+          "severity": {"type": "string", "enum": ["critical", "high", "medium", "low", "info"]},
+          "category": {"type": "string", "enum": ["availability", "performance", "capacity", "security", "config-hygiene", "lifecycle", "documentation"]},
+          "host_id": {"type": "string"},
+          "title": {"type": "string"},
+          "detail": {"type": "string"},
+          "evidence": {
+            "type": "array",
+            "description": "raw command output lines / metric values that prove this",
+            "items": {
+              "type": "object",
+              "required": ["source"],
+              "additionalProperties": false,
+              "properties": {
+                "source": {"type": "string", "description": "command run or metric name"},
+                "excerpt": {"type": "string"},
+                "observed_at": {"type": "string"}
+              }
+            }
+          },
+          "confidence": {"type": "string", "enum": ["confirmed", "likely", "suspected"]},
+          "recommendation": {"type": "string", "description": "what to do. netwalk NEVER does it."},
+          "public_safe": {"type": "boolean", "default": true, "description": "false = hide in --public report mode"}
+        }
+      }
+    },
+    "evidence_log": {
+      "type": "array",
+      "description": "append-only record of every command netwalk actually ran. Read-only proof for the customer.",
+      "items": {
+        "type": "object",
+        "required": ["host_id", "command", "at"],
+        "additionalProperties": false,
+        "properties": {
+          "host_id": {"type": "string"},
+          "command": {"type": "string"},
+          "at": {"type": "string"},
+          "exit_code": {"type": "integer"},
+          "bytes_out": {"type": "integer"}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "device": {
+      "type": "object",
+      "required": ["host_id", "reachable"],
+      "additionalProperties": false,
+      "properties": {
+        "host_id": {"type": "string", "description": "stable key used by topology_edges/findings. Usually hostname, else IP."},
+        "hostname": {"type": "string"},
+        "mgmt_ip": {"type": "string"},
+        "vendor": {"type": "string", "description": "mikrotik|cisco|aruba|hp|ubiquiti|ruckus|fortinet|tplink|synology|linux|windows|unknown"},
+        "model": {"type": "string"},
+        "serial": {"type": "string"},
+        "os": {"type": "string"},
+        "os_version": {"type": "string"},
+        "firmware": {"type": "string"},
+        "role": {"type": "string", "enum": ["gateway", "router", "l3-switch", "switch", "ap", "controller", "firewall", "server", "nas", "nvr", "printer", "ups", "client", "unmanaged-switch", "unknown"]},
+        "site_location": {"type": "string", "description": "rack/floor/room if known"},
+        "uptime": {"type": "string"},
+        "reachable": {"type": "boolean"},
+        "unreachable_reason": {"type": "string"},
+        "access_method": {"type": "string", "enum": ["ssh", "api", "romon", "controller", "snmp", "manual-paste", "none"]},
+        "config_export_path": {"type": "string", "description": "relative path to the exported config under configs/. netwalk EXPORTS, never imports."},
+        "health": {"$ref": "#/$defs/health"},
+        "interfaces": {"type": "array", "items": {"$ref": "#/$defs/interface"}},
+        "vlans": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {"type": "integer"},
+              "name": {"type": "string"},
+              "subnet": {"type": "string"},
+              "tagged_ports": {"type": "array", "items": {"type": "string"}},
+              "untagged_ports": {"type": "array", "items": {"type": "string"}},
+              "dhcp_server": {"type": "string"}
+            }
+          }
+        },
+        "arp_entries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "ip": {"type": "string"},
+              "mac": {"type": "string"},
+              "interface": {"type": "string"},
+              "vendor_oui": {"type": "string"},
+              "hostname": {"type": "string"},
+              "source": {"type": "string", "enum": ["static", "dynamic", "dhcp-lease", "unknown"]}
+            }
+          }
+        },
+        "dhcp_leases": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "ip": {"type": "string"},
+              "mac": {"type": "string"},
+              "hostname": {"type": "string"},
+              "comment": {"type": "string"},
+              "server": {"type": "string"},
+              "expires": {"type": "string"},
+              "static": {"type": "boolean"}
+            }
+          }
+        },
+        "neighbors": {
+          "type": "array",
+          "description": "raw discovery output as seen FROM this device",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "protocol": {"type": "string", "enum": ["lldp", "cdp", "mndp", "ndp", "other"]},
+              "local_port": {"type": "string"},
+              "remote_identity": {"type": "string"},
+              "remote_port": {"type": "string"},
+              "remote_ip": {"type": "string"},
+              "remote_mac": {"type": "string"},
+              "remote_platform": {"type": "string"}
+            }
+          }
+        },
+        "routes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "dst": {"type": "string"},
+              "gateway": {"type": "string"},
+              "interface": {"type": "string"},
+              "protocol": {"type": "string"},
+              "distance": {"type": "integer"},
+              "active": {"type": "boolean"}
+            }
+          }
+        },
+        "wireless_networks": {
+          "type": "array",
+          "description": "role=ap only",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "ssid": {"type": "string"},
+              "band": {"type": "string", "enum": ["2.4GHz", "5GHz", "6GHz", "multi"]},
+              "channel": {"type": "string"},
+              "width": {"type": "string"},
+              "tx_power": {"type": "string"},
+              "security": {"type": "string", "enum": ["open", "wep", "wpa-personal", "wpa2-personal", "wpa2-enterprise", "wpa3-personal", "wpa3-enterprise", "wpa2/3-mixed", "unknown"]},
+              "vlan": {"type": "integer"},
+              "clients": {"type": "integer"},
+              "guest": {"type": "boolean"},
+              "client_isolation": {"type": "boolean"},
+              "hidden": {"type": "boolean"}
+            }
+          }
+        },
+        "services": {
+          "type": "array",
+          "description": "linux/windows servers: what is actually running",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "name": {"type": "string"},
+              "state": {"type": "string", "enum": ["running", "stopped", "failed", "degraded", "unknown"]},
+              "enabled": {"type": "boolean"},
+              "restarts": {"type": "integer"},
+              "listen": {"type": "array", "items": {"type": "string"}},
+              "note": {"type": "string"}
+            }
+          }
+        },
+        "log_excerpts": {
+          "type": "array",
+          "description": "only lines that matter - errors, resets, auth failures, link flaps",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "at": {"type": "string"},
+              "severity": {"type": "string"},
+              "topic": {"type": "string"},
+              "message": {"type": "string"},
+              "count": {"type": "integer", "description": "if collapsed from repeats"}
+            }
+          }
+        },
+        "mgmt_exposure": {
+          "type": "object",
+          "description": "read-only observation of which management services answer, and from where",
+          "additionalProperties": false,
+          "properties": {
+            "services": {"type": "array", "items": {"type": "string"}},
+            "reachable_from_wan": {"type": "array", "items": {"type": "string"}},
+            "note": {"type": "string"}
+          }
+        }
+      }
+    },
+    "health": {
+      "type": "object",
+      "description": "point-in-time resource status. Every number keeps its unit in the key or the string.",
+      "additionalProperties": false,
+      "properties": {
+        "cpu_load_pct": {"type": "number"},
+        "cpu_cores": {"type": "integer"},
+        "load_avg": {"type": "array", "items": {"type": "number"}},
+        "temperature_c": {"type": "number"},
+        "memory_total_mb": {"type": "number"},
+        "memory_used_mb": {"type": "number"},
+        "memory_free_mb": {"type": "number"},
+        "storage_total_mb": {"type": "number"},
+        "storage_free_mb": {"type": "number"},
+        "storage_write_cycles": {"type": "string", "description": "RouterOS bad-blocks / flash wear if exposed"},
+        "psu": {"type": "array", "items": {"type": "string"}},
+        "fan": {"type": "array", "items": {"type": "string"}},
+        "voltage": {"type": "string"},
+        "poe_budget_w": {"type": "number"},
+        "poe_used_w": {"type": "number"},
+        "session_count": {"type": "integer", "description": "conntrack / firewall connections"},
+        "session_max": {"type": "integer"},
+        "sampled_at": {"type": "string"}
+      }
+    },
+    "interface": {
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {"type": "string"},
+        "alias": {"type": "string", "description": "port description/comment as configured on the device"},
+        "type": {"type": "string", "description": "ether|sfp|sfp+|vlan|bridge|wlan|bond|tunnel|loopback"},
+        "admin_up": {"type": "boolean"},
+        "link_up": {"type": "boolean"},
+        "speed": {"type": "string"},
+        "duplex": {"type": "string"},
+        "mtu": {"type": "integer"},
+        "mac": {"type": "string"},
+        "ips": {"type": "array", "items": {"type": "string"}},
+        "vlan": {"type": "integer"},
+        "pvid": {"type": "integer"},
+        "poe_out": {"type": "string"},
+        "sfp_dbm_rx": {"type": "number"},
+        "sfp_dbm_tx": {"type": "number"},
+        "rx_bps": {"type": "number"},
+        "tx_bps": {"type": "number"},
+        "rx_bytes": {"type": "number"},
+        "tx_bytes": {"type": "number"},
+        "rx_errors": {"type": "number"},
+        "tx_errors": {"type": "number"},
+        "rx_drops": {"type": "number"},
+        "tx_drops": {"type": "number"},
+        "crc_errors": {"type": "number"},
+        "last_link_down": {"type": "string"},
+        "link_downs": {"type": "integer", "description": "flap counter - the single most useful cable-fault signal"},
+        "mac_table": {
+          "type": "array",
+          "description": "MACs learned on THIS port. 2+ MACs where LLDP sees 0-1 neighbours = suspected unmanaged switch.",
+          "items": {"type": "string"}
+        }
+      }
+    }
+  }
+}

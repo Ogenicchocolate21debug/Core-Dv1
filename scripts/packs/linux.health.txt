@@ -1,0 +1,14 @@
+# netwalk health pack - generic Linux server (read-only)
+uptime
+free -m
+df -h
+lsblk
+top -b -n 1
+ps aux --sort=-%mem
+systemctl list-units --type=service --state=running
+systemctl list-units --state=failed
+journalctl -p err -n 200 --no-pager
+dmesg -T -l err,warn
+sensors
+smartctl -H /dev/sda
+docker ps

@@ -1,0 +1,11 @@
+# netwalk discovery pack - FortiOS (read-only)
+get system status
+get system performance status
+get hardware status
+show full-configuration
+get system interface physical
+get router info routing-table all
+diagnose ip arp list
+get system arp
+diagnose switch mac-address list
+get system session status

@@ -1,0 +1,23 @@
+# Never commit anything from a real engagement.
+sites/
+*.conf
+*.cfg
+*.rsc
+evidence.jsonl
+report*.html
+map*.svg
+
+# Credential store lives outside the repo, but be paranoid anyway.
+creds/
+*creds*.json
+.netwalk/
+
+# Fetched brand marks are not part of the source distribution.
+assets/logos/*.svg
+assets/logos/NOTICE.md
+
+__pycache__/
+*.py[cod]
+*.bak.*
+.DS_Store
+.venv/

@@ -1,0 +1,7 @@
+show system resource-utilization
+show environment temperature
+show environment fan
+show environment power-supply
+show interface | include error|drop|CRC
+show events -d
+show logging -r

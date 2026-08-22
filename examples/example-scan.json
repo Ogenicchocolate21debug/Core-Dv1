@@ -1,0 +1,114 @@
+{
+  "site": {"id": "example-branch", "name": "Example Branch Office", "customer": "Example Co., Ltd.",
+           "engineer": "netwalk", "scope_note": "Read-only survey of the branch LAN, authorised by the site owner."},
+  "scanned_at": "2026-08-22T10:00:00+07:00",
+  "entry_point": {"host_id": "gw-branch", "ip": "10.20.0.1", "how": "ssh"},
+  "coverage": {"hops_completed": 3, "devices_reachable": 6, "devices_unreachable": 1,
+               "stopped_early": false,
+               "not_covered": ["Wi-Fi RF survey - no on-site spectrum capture was performed",
+                               "The printer VLAN was visible in ARP but no device on it was logged into"]},
+  "wan_links": [
+    {"isp": "ExampleFiber", "on_host": "gw-branch", "interface": "ether1", "ip": "203.0.113.10/30",
+     "gateway": "203.0.113.9", "link_speed": "1G", "type": "fiber", "role": "primary"},
+    {"isp": "ExampleLTE", "on_host": "gw-branch", "interface": "lte1", "ip": "100.64.5.22/32",
+     "link_speed": "50M", "type": "lte", "role": "backup"}
+  ],
+  "devices": [
+    {"host_id": "gw-branch", "hostname": "GW-BRANCH", "mgmt_ip": "10.20.0.1", "vendor": "mikrotik",
+     "model": "RB5009UG+S+", "os": "RouterOS", "os_version": "7.23.2", "role": "gateway",
+     "uptime": "2w5d19h", "reachable": true, "access_method": "ssh",
+     "health": {"cpu_load_pct": 8, "cpu_cores": 4, "memory_total_mb": 1024, "memory_free_mb": 394,
+                "storage_total_mb": 1024, "storage_free_mb": 926, "session_count": 4120, "session_max": 65536},
+     "interfaces": [
+       {"name": "ether1", "type": "ether", "admin_up": true, "link_up": true, "speed": "1Gbps",
+        "ips": ["203.0.113.10/30"], "rx_bps": 41000000, "tx_bps": 8300000},
+       {"name": "ether8", "alias": "to core switch", "type": "ether", "admin_up": true, "link_up": true,
+        "speed": "1Gbps", "link_downs": 0, "mac_table": ["AA:BB:CC:00:00:01"]}
+     ],
+     "vlans": [{"id": 10, "name": "office", "subnet": "10.20.10.0/24", "tagged_ports": ["ether8"]},
+               {"id": 20, "name": "voip", "subnet": "10.20.20.0/24", "tagged_ports": ["ether8"]},
+               {"id": 90, "name": "guest", "subnet": "10.20.90.0/24", "tagged_ports": ["ether8"]}]},
+
+    {"host_id": "sw-core", "hostname": "SW-CORE", "mgmt_ip": "10.20.0.2", "vendor": "cisco",
+     "model": "C9200L-24P", "os": "IOS-XE", "os_version": "17.09.04a", "role": "l3-switch",
+     "uptime": "3w2d", "reachable": true, "access_method": "ssh",
+     "health": {"cpu_load_pct": 31, "memory_total_mb": 2048, "memory_used_mb": 1210,
+                "temperature_c": 44, "poe_budget_w": 370, "poe_used_w": 128}},
+
+    {"host_id": "sw-fl2", "hostname": "SW-FL2", "mgmt_ip": "10.20.0.3", "vendor": "aruba",
+     "model": "6100-24G", "os": "ArubaOS-CX", "os_version": "10.10.1010", "role": "switch",
+     "uptime": "3w2d", "reachable": true, "access_method": "ssh",
+     "health": {"cpu_load_pct": 12, "memory_total_mb": 1024, "memory_used_mb": 500, "temperature_c": 39}},
+
+    {"host_id": "sw-unmanaged-1", "hostname": "suspected unmanaged switch", "vendor": "unknown",
+     "role": "unmanaged-switch", "reachable": false,
+     "unreachable_reason": "inferred: 5 MACs on one port, 0 LLDP neighbours"},
+
+    {"host_id": "ap-office-1", "hostname": "AP-OFFICE-1", "mgmt_ip": "10.20.0.11", "vendor": "ubiquiti",
+     "model": "U6-Pro", "os_version": "6.6.77", "role": "ap", "uptime": "11d", "reachable": true,
+     "health": {"cpu_load_pct": 22, "memory_total_mb": 512, "memory_used_mb": 300},
+     "wireless_networks": [
+       {"ssid": "ExampleCorp", "band": "5GHz", "channel": "36", "width": "80MHz",
+        "security": "wpa2-enterprise", "vlan": 10, "clients": 34},
+       {"ssid": "ExampleGuest", "band": "2.4GHz", "channel": "6", "width": "20MHz",
+        "security": "wpa2-personal", "vlan": 90, "clients": 12, "guest": true, "client_isolation": false}]},
+
+    {"host_id": "ap-office-2", "hostname": "AP-OFFICE-2", "mgmt_ip": "10.20.0.12", "vendor": "ubiquiti",
+     "model": "U6-Lite", "os_version": "6.6.77", "role": "ap", "uptime": "11d", "reachable": true,
+     "health": {"cpu_load_pct": 91, "memory_total_mb": 512, "memory_used_mb": 470}},
+
+    {"host_id": "srv-files", "hostname": "SRV-FILES", "mgmt_ip": "10.20.10.50", "vendor": "synology",
+     "model": "DS1522+", "os": "DSM", "os_version": "7.2.1", "role": "nas", "uptime": "184d",
+     "reachable": true,
+     "health": {"cpu_load_pct": 17, "memory_total_mb": 8192, "memory_used_mb": 5900,
+                "storage_total_mb": 20000000, "storage_free_mb": 1600000, "temperature_c": 41}}
+  ],
+  "topology_edges": [
+    {"a_host": "gw-branch", "a_port": "ether8", "b_host": "sw-core", "b_port": "Gi1/0/1",
+     "discovered_via": "lldp", "speed": "1G"},
+    {"a_host": "sw-core", "a_port": "Gi1/0/24", "b_host": "sw-fl2", "b_port": "1/1/1",
+     "discovered_via": "lldp", "speed": "1G"},
+    {"a_host": "sw-core", "a_port": "Gi1/0/10", "b_host": "ap-office-1", "b_port": "eth0",
+     "discovered_via": "lldp", "speed": "1G"},
+    {"a_host": "sw-fl2", "a_port": "1/1/8", "b_host": "sw-unmanaged-1",
+     "discovered_via": "inferred", "note": "MAC/LLDP mismatch"},
+    {"a_host": "sw-unmanaged-1", "b_host": "ap-office-2", "b_port": "eth0", "discovered_via": "inferred"},
+    {"a_host": "sw-core", "a_port": "Gi1/0/20", "b_host": "srv-files", "b_port": "bond0",
+     "discovered_via": "lldp", "speed": "1G"}
+  ],
+  "findings": [
+    {"id": "F1", "severity": "high", "category": "security", "host_id": "ap-office-1",
+     "title": "Guest SSID has no client isolation",
+     "detail": "ExampleGuest (VLAN 90) lets guest devices reach each other on layer 2.",
+     "evidence": [{"source": "wireless_networks[ExampleGuest].client_isolation", "excerpt": "false"}],
+     "confidence": "confirmed",
+     "recommendation": "Enable client isolation on the guest WLAN and confirm VLAN 90 cannot route to VLAN 10/20.",
+     "public_safe": true},
+    {"id": "F2", "severity": "high", "category": "capacity", "host_id": "ap-office-2",
+     "title": "AP-OFFICE-2 is CPU saturated",
+     "detail": "91% CPU with only 512MB RAM and 92% of it in use - this AP will drop frames under load.",
+     "evidence": [{"source": "health.cpu_load_pct", "excerpt": "91"},
+                  {"source": "health.memory_used_mb / memory_total_mb", "excerpt": "470 / 512"}],
+     "confidence": "confirmed",
+     "recommendation": "Check what is associated to it and rebalance clients, or replace the AP.",
+     "public_safe": true},
+    {"id": "F3", "severity": "medium", "category": "documentation", "host_id": "sw-unmanaged-1",
+     "title": "Undocumented switch between SW-FL2 and AP-OFFICE-2",
+     "detail": "Port 1/1/8 on SW-FL2 has learned 5 MAC addresses but reports no LLDP neighbour, which is what a dumb switch looks like from both sides.",
+     "evidence": [{"source": "sw-fl2 show mac-address-table interface 1/1/8", "excerpt": "5 entries"},
+                  {"source": "sw-fl2 show lldp neighbor-info 1/1/8", "excerpt": "(none)"}],
+     "confidence": "likely",
+     "recommendation": "Physically trace port 1/1/8 and add whatever is there to the asset list.",
+     "public_safe": true},
+    {"id": "F4", "severity": "low", "category": "capacity", "host_id": "srv-files",
+     "title": "NAS volume is 92% full",
+     "evidence": [{"source": "health.storage_free_mb / storage_total_mb", "excerpt": "1600000 / 20000000"}],
+     "confidence": "confirmed",
+     "recommendation": "Plan capacity before it crosses 95%.", "public_safe": true}
+  ],
+  "evidence_log": [
+    {"host_id": "gw-branch", "command": "/system resource print", "at": "2026-08-22T10:00:03+07:00", "exit_code": 0, "bytes_out": 612},
+    {"host_id": "gw-branch", "command": "/ip neighbor print detail", "at": "2026-08-22T10:00:05+07:00", "exit_code": 0, "bytes_out": 3802},
+    {"host_id": "sw-core", "command": "show lldp neighbors detail", "at": "2026-08-22T10:01:11+07:00", "exit_code": 0, "bytes_out": 5120}
+  ]
+}

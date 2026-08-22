@@ -1,0 +1,2 @@
+# netwalk config export - MikroTik RouterOS. /export is a DUMP, it changes nothing.
+/export

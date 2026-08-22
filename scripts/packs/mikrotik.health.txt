@@ -1,0 +1,13 @@
+# netwalk health pack - MikroTik RouterOS (read-only)
+/system resource print
+/system health print
+/system resource cpu print
+/system clock print
+/system package update print
+/interface ethernet print stats
+/interface print stats
+/interface monitor-traffic interface=ether1 once
+/ip firewall connection tracking print
+/system logging print
+/log print
+/interface ethernet poe monitor numbers=0 once

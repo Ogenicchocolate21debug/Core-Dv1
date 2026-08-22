@@ -1,0 +1,4 @@
+get system performance status
+diagnose hardware sysinfo memory
+diagnose sys session stat
+get system interface physical

@@ -1,0 +1,8 @@
+systeminfo
+hostname
+ipconfig /all
+route print
+arp -a
+Get-NetAdapter
+Get-NetIPConfiguration
+Get-NetRoute

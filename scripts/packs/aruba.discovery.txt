@@ -1,0 +1,12 @@
+# netwalk discovery pack - ArubaOS-CX (read-only)
+show version
+show system
+show running-config
+show interface brief
+show lldp neighbor-info detail
+show vlan
+show mac-address-table
+show arp
+show ip route
+show lacp interfaces
+show spanning-tree

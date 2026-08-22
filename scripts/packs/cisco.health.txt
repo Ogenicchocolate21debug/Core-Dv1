@@ -1,0 +1,11 @@
+# netwalk health pack - Cisco IOS / IOS-XE (read-only)
+terminal length 0
+show processes cpu sorted
+show processes memory sorted
+show memory statistics
+show environment all
+show power inline
+show interfaces counters errors
+show interfaces | include line protocol|CRC|input errors|output errors|resets
+show logging
+show version | include uptime|Uptime

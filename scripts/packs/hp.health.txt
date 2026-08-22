@@ -1,0 +1,5 @@
+show system
+show system temperature
+show system power-supply
+show interfaces
+show logging

@@ -1,0 +1,12 @@
+# netwalk discovery pack - generic Linux server (read-only)
+hostnamectl
+uname -a
+ip -br addr
+ip -br link
+ip route
+ip neigh
+bridge link
+ss -tulpn
+resolvectl status
+lldpctl
+cat /etc/os-release

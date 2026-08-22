@@ -1,0 +1,21 @@
+# netwalk discovery pack - MikroTik RouterOS (read-only)
+/system identity print
+/system resource print
+/system routerboard print
+/interface print detail
+/ip address print detail
+/ip neighbor print detail
+/interface bridge host print detail
+/interface ethernet switch port print detail
+/interface bridge vlan print detail
+/interface vlan print detail
+/ip arp print detail
+/ip dhcp-server lease print detail
+/ip dhcp-server print detail
+/ip route print detail
+/ip dns print
+/interface wireless print detail
+/interface wifi print detail
+/interface wifi registration-table print detail
+/ip service print
+/tool romon print

@@ -1,0 +1,9 @@
+# "config export" for a Linux box = the files that define its behaviour.
+cat /etc/network/interfaces
+cat /etc/netplan/00-installer-config.yaml
+cat /etc/resolv.conf
+cat /etc/hosts
+cat /etc/fstab
+nft list ruleset
+iptables -S
+crontab -l

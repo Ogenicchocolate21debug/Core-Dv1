@@ -1,0 +1,13 @@
+# netwalk discovery pack - HP/HPE ProCurve & Comware (read-only)
+show version
+show system-information
+show running-config
+show interfaces brief
+show lldp info remote-device
+show cdp neighbors detail
+show vlans
+show mac-address
+show arp
+show ip route
+show trunks
+show spanning-tree

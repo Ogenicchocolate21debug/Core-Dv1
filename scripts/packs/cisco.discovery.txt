@@ -1,0 +1,18 @@
+# netwalk discovery pack - Cisco IOS / IOS-XE (read-only)
+terminal length 0
+show version
+show inventory
+show running-config
+show interfaces status
+show interfaces description
+show ip interface brief
+show cdp neighbors detail
+show lldp neighbors detail
+show vlan brief
+show interfaces trunk
+show mac address-table
+show ip arp
+show ip route
+show spanning-tree summary
+show etherchannel summary
+show ip dhcp binding
