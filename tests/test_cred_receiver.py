@@ -261,6 +261,40 @@ def _(url, port):
         assert not e.get(secret), f"unknown stored a {secret}"
 
 
+@case("\"I know what it is, no login\" documents the device without a credential")
+def _(url, port):
+    payload = {"hosts": {"the-printer": {
+        "method": "known-no-cred", "ip": "10.0.0.60", "vendor": "unknown",
+        "described": "Ricoh MP C4504 in the staff room", "role_hint": "printer",
+        "purpose": "staff printing and scan-to-email", "owner": "the copier contractor"}}}
+    code, body = post(f"{url}/save", payload, {"Origin": f"http://127.0.0.1:{port}"})
+    assert code == 200, f"{code} {body}"
+    e = json.loads(Path(body["path"]).read_text())["hosts"]["the-printer"]
+    assert e["method"] == "known-no-cred", e
+    assert e["described"].startswith("Ricoh"), e
+    assert e["role_hint"] == "printer" and e["owner"] == "the copier contractor", e
+    for secret in ("password", "key_path", "api_token", "enable_password"):
+        assert not e.get(secret), f"known-no-cred stored a {secret}"
+    env = dict(os.environ)
+    env["NETWALK_HOME"] = str(HERE / ".tmp-netwalk-home")
+    out = subprocess.run([sys.executable, str(CRED), "answers", "--site", SITE],
+                         capture_output=True, text=True, env=env)
+    assert "Ricoh MP C4504" in out.stdout, "answers did not print the description"
+    r = subprocess.run([sys.executable, str(ROOT / "scripts" / "netwalk_exec.py"), "run",
+                        "--site", SITE, "--host", "the-printer", "--cmd", "show version"],
+                       capture_output=True, text=True, env=env)
+    assert r.returncode == 3, f"expected no-credential refusal, got {r.returncode}"
+    assert "Ricoh" in r.stderr, f"the refusal did not quote the description: {r.stderr}"
+
+
+@case("the form offers the described-but-no-login option")
+def _(url, port):
+    code, body = get(url)
+    assert code == 200, code
+    assert "I know what it is" in body, "the known-no-cred option is missing"
+    assert 'name="described"' in body and 'name="role_hint"' in body, "description fields missing"
+
+
 @case("\"not ours\" is stored and the exec wrapper refuses to connect")
 def _(url, port):
     payload = {"hosts": {"landlord-router": {"method": "not-ours", "ip": "10.0.0.45",

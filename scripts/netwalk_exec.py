@@ -97,9 +97,12 @@ def load_host(site: str, host: str) -> dict:
         die(f"{host!r} was marked OUT OF SCOPE on the login form - netwalk will not "
             f"connect to it. Re-run /netwalk-login and change the answer if that was "
             f"a mistake.", 5)
-    if method in ("unknown", "skip"):
-        state = ("the user did not recognise this device" if method == "unknown"
-                 else "the user deferred this device")
+    if method in ("unknown", "skip", "known-no-cred"):
+        state = {"unknown": "the user did not recognise this device",
+                 "skip": "the user deferred this device",
+                 "known-no-cred": (f"the user described it as "
+                                   f"{entry.get('described') or 'a known device'} but has no login "
+                                   f"for it")}[method]
         die(f"no credential for {host!r}: {state} on the login form. Record it as "
             f"reachable:false with that reason and move on.", 3)
     return entry

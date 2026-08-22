@@ -47,11 +47,24 @@ METHODS = [
     ("password", "SSH password"),
     ("key+password", "SSH key + enable/secondary password"),
     ("api", "HTTP API token"),
+    ("known-no-cred", "I know what it is \u2014 but I have no login for it"),
     ("unknown", "I don't know what this device is"),
     ("not-ours", "Not ours / out of scope — do not touch it"),
     ("skip", "Skip for now, ask me again later"),
 ]
-NO_CREDENTIAL = ("unknown", "not-ours", "skip")
+# Verdicts that carry no credential. "known-no-cred" is the useful one: the device
+# gets documented - what it is, what it does, who owns it - even though netwalk will
+# never log into it. That turns a blank in the report into a described device that
+# simply was not surveyed, which is a much more honest thing to hand a site owner.
+NO_CREDENTIAL = ("known-no-cred", "unknown", "not-ours", "skip")
+
+DEVICE_KINDS = [
+    ("", "role, if you know it"), ("switch", "Switch"), ("ap", "Access point"),
+    ("router", "Router"), ("gateway", "Gateway / firewall"), ("controller", "Controller"),
+    ("server", "Server"), ("nas", "NAS / storage"), ("nvr", "NVR / camera recorder"),
+    ("client", "Camera / phone / endpoint"), ("printer", "Printer"), ("ups", "UPS"),
+    ("unmanaged-switch", "Unmanaged switch"), ("unknown", "Something else"),
+]
 
 KEY_MATERIAL_MARKERS = ("-----BEGIN", "PRIVATE KEY", "ssh-rsa ", "ssh-ed25519 ")
 
@@ -246,9 +259,11 @@ function collect(all){
     c.querySelectorAll('[name^="ask::"]').forEach(function(el){
       if(el.value.trim()) ans[el.name.slice(5)]=el.value.trim();
     });
-    if(m==='skip'||m==='unknown'||m==='not-ours'){
+    if(m==='skip'||m==='unknown'||m==='not-ours'||m==='known-no-cred'){
       out[id]={method:m,ip:c.dataset.ip,vendor:c.dataset.vendor,
-               note:(c.querySelector('[name=note]:not([disabled])')||{}).value||'',answers:ans};
+               note:(c.querySelector('[name=note]:not([disabled])')||{}).value||'',
+               described:g('described'),role_hint:g('role_hint'),
+               purpose:g('purpose'),owner:g('owner'),answers:ans};
       return;
     }
     var kp=g('key_path');
@@ -325,6 +340,13 @@ def field(label: str, name: str, placeholder: str = "", type_: str = "text", whe
     )
 
 
+def select_field(label: str, name: str, options: list, when: str | None = None) -> str:
+    attr = f' data-when="{when}"' if when else ""
+    opts = "".join(f'<option value="{html.escape(v)}">{html.escape(t)}</option>' for v, t in options)
+    return (f'<div class="f"{attr}><label>{html.escape(label)}</label>'
+            f'<select name="{name}">{opts}</select></div>')
+
+
 def render_form(site: str, hosts: list[dict], save_url: str, existing: dict,
                 asks: list[dict] | None = None, rnd: int = 0, version: int = 1,
                 state_url: str = "", persistent: bool = False) -> str:
@@ -384,6 +406,14 @@ def _card(h: dict, existing: dict, asks_for) -> str:
   </div>
   <div class="row">{field('Note (optional)', 'note', 'e.g. read-only account, jumps via 10.0.0.9', when='key password key+password api')}
     {field('Anything you can say about it?', 'note', 'e.g. "was here when we took the site over" — helps the report', when='unknown not-ours')}</div>
+  <div class="row">
+    {field('What is it?', 'described', 'e.g. Ricoh MP C4504 printer, staff room', when='known-no-cred')}
+    {select_field('Role', 'role_hint', DEVICE_KINDS, when='known-no-cred')}
+  </div>
+  <div class="row">
+    {field('What is it for?', 'purpose', 'e.g. serves the CCTV recorder for the north building', when='known-no-cred')}
+    {field('Who looks after it?', 'owner', 'e.g. the CCTV contractor, or "us"', when='known-no-cred')}
+  </div>
   <details class="more"><summary>Access details — how to reach it (optional, not secret)</summary>
     <div class="row">{''.join(field(lbl, k, ph) for k, lbl, ph in ACCESS_FIELDS)}</div>
   </details>
@@ -415,7 +445,10 @@ It is never sent to the chat, never written into a scan record, and never includ
 Give a <i>path</i> to your SSH key &mdash; never paste the key itself.
 <br><br>If you do not recognise a device, say so with <b>&ldquo;I don&rsquo;t know what this is&rdquo;</b> rather
 than leaving it blank &mdash; an unidentified device on the network is a finding, and a blank card just looks
-like an unanswered question. Anything you mark <b>Not ours</b> will not be logged into at all.</div>
+like an unanswered question. If you <i>do</i> know what it is but have no login for it, pick
+<b>&ldquo;I know what it is&rdquo;</b> and describe it &mdash; it will appear in the report as a documented
+device that simply was not surveyed, which is far more useful than a blank. Anything you mark
+<b>Not ours</b> will not be logged into at all.</div>
 <div id="newcount" class="toast"></div>
 <form id="f"><div id="cards">{''.join(cards)}</div>
 <div class="bar"><button id="go" type="submit">Save credentials</button><span id="status"></span></div>
@@ -560,6 +593,10 @@ class Receiver(BaseHTTPRequestHandler):
                 prev.setdefault("vendor", str(spec.get("vendor") or "unknown").strip().lower())
                 if str(spec.get("note") or "").strip():
                     prev["note"] = str(spec["note"]).strip()
+                for k in ("described", "role_hint", "purpose", "owner"):
+                    v = str(spec.get(k) or "").strip()
+                    if v:
+                        prev[k] = v
                 if answers:
                     prev["answers"] = {**prev.get("answers", {}), **answers}
                 prev["stored_at"] = now_iso()
@@ -833,7 +870,8 @@ def cmd_list(args: argparse.Namespace) -> int:
         have = [k for k in ("password", "key_path", "enable_password", "api_token") if e.get(k)]
         if e.get("method") in NO_CREDENTIAL:
             have = [{"unknown": "not recognised", "not-ours": "OUT OF SCOPE",
-                     "skip": "deferred"}[e["method"]]]
+                     "skip": "deferred",
+                     "known-no-cred": "described, no login"}[e["method"]]]
         rows.append((hid, e.get("ip", ""), e.get("vendor", ""), e.get("method", ""),
                      e.get("username", ""), ",".join(have) or "-", e.get("note", "")))
     if not rows:
@@ -858,7 +896,8 @@ def cmd_answers(args: argparse.Namespace) -> int:
         return 1
     vault = load_vault(args.site)
     SAFE = ("ip", "port", "vendor", "method", "username", "note",
-            "mgmt_url", "jump_host", "tenant")
+            "mgmt_url", "jump_host", "tenant",
+            "described", "role_hint", "purpose", "owner")
     shown = 0
     for hid, e in sorted(vault.get("hosts", {}).items()):
         if args.host and hid != args.host:

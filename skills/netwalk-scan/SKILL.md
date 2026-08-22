@@ -54,6 +54,17 @@ scan a device  ──►  new neighbours discovered
       └──────  read the answers back (answers) ──┘   log into what you were given
 ```
 
+**Never drop a discovered host because you do not recognise it.** It is tempting to filter an ARP
+table down to the entries whose OUI looks like infrastructure and quietly skip the rest. Do not:
+an unrecognised MAC is not evidence that a device is uninteresting, it is evidence that *you* cannot
+identify it — which is precisely the question the form exists to ask. This has already gone wrong
+once in the field: a hypervisor was left off the form because its OUI was not in a lookup table,
+and it was the single most important host on that VLAN.
+
+If a subnet has more hosts than one page can sensibly carry, put the infrastructure-looking ones on
+first, then **say in the same message exactly how many you left off and on what basis**, and offer
+to add them. Silent filtering and honest triage look identical in the output; only one of them is.
+
 Start `netwalk_cred.py serve` once at the beginning and leave it running for the whole survey. Each
 round, push that round's discoveries into the open page with `add` — the user keeps one tab, keeps
 one URL, and fills things in at their own pace while the crawl carries on. Never stop and restart

@@ -155,6 +155,7 @@ and exits. Nothing is transmitted off the machine and nothing passes through you
 | SSH password | the device only does passwords | Needs a helper: `paramiko` (any OS), `sshpass` (macOS/Linux) or `plink` (Windows). Run the preflight below if unsure. |
 | SSH key + password | key login plus an enable/secondary password | e.g. Cisco `enable` |
 | API token | the vendor is driven over HTTP, not SSH | netwalk stores it; you drive the API yourself. `netwalk_exec.py` only speaks SSH. |
+| I know what it is, no login | they can identify it but cannot give access | Fill in what it is, its role, what it is for and who owns it. The device is then documented in the report as a known device that was not surveyed - far more useful than a blank, and it gets a proper `role` on the diagram |
 | Skip | you do not have access and are not getting it | The device stays in the record as `reachable: false` with a reason. Any questions on that card are still saved, and an existing credential is left alone — use `forget` to remove one. That is a legitimate result: say so in the report rather than leaving a gap. |
 
 Environment check when password auth is in play:
