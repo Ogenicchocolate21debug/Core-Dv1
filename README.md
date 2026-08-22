@@ -128,9 +128,27 @@ instead of `python3` if that is how your install is named.
 ## How a survey goes
 
 ```
-netwalk-login  →  netwalk-scan  →  netwalk-diag  →  netwalk-map  →  netwalk-fullreport
-  get access      crawl the LAN     read health      draw it         hand it over
+        ┌─────────────────── repeat until the frontier is empty ───────────────────┐
+        │                                                                          │
+        ▼                                                                          │
+  netwalk-login  ──►  netwalk-scan  ──►  netwalk-diag  ───────────────────────────┘
+   get access          crawl a hop        read its health
+   (form stays open)   find neighbours    export config, find faults
+        ▲                    │
+        └── new devices ─────┘   each round's discoveries go back on the same form
+
+                    when the crawl runs dry, or the engineer says enough
+                                          │
+                                          ▼
+                        netwalk-map  ──►  netwalk-fullreport
+                          draw it           hand it over
 ```
+
+`login`, `scan` and `diag` are **one loop, not three phases**. Every hop turns up devices nobody
+mentioned; those go straight back onto the credential form that is already open, the engineer answers
+them at their own pace, and the crawl carries on. It ends when a round finds nothing the engineer has
+not already ruled on — or when they decide the coverage is good enough. `map` and `fullreport` run
+once at the end, over whatever the loop actually reached.
 
 **Scope first.** netwalk crawls outward from one device you name. It is not a port scanner and will
 not sweep a range you did not ask for. For customer work it records what you were authorised to do,

@@ -51,7 +51,7 @@ toolkit, so an upgrade cannot delete a customer's scan history.
 
 ## `netwalk`
 
-> Run a complete read-only network survey end to end: get access, crawl the topology, diagnose every device, draw the diagram and produce a deliverable report. Orchestrates netwalk-login, netwalk-scan, netwalk-diag, netwalk-map and netwalk-fullreport in order. Use when the user wants a whole network surveyed, audited or documented rather than one specific step - 'survey this site', 'audit my customer's network', 'document what is on this LAN'.
+> Run a complete read-only network survey end to end: get access, crawl the topology, diagnose every device, draw the diagram and produce a deliverable report. Loops netwalk-login, netwalk-scan and netwalk-diag until the crawl runs dry or the engineer is satisfied, then finishes once with netwalk-map and netwalk-fullreport. Use when the user wants a whole network surveyed, audited or documented rather than one specific step - 'survey this site', 'audit my customer's network', 'document what is on this LAN'.
 
 ## netwalk
 
@@ -62,11 +62,27 @@ Each stage is also a skill in its own right. Use this one when the user wants th
 invoke a single stage directly when they want just that step.
 
 ```
-netwalk-login  →  netwalk-scan  →  netwalk-diag  →  netwalk-map  →  netwalk-fullreport
-  get access      crawl the LAN     read health      draw it         hand it over
-        ↑______________|_______________|
-        credentials are requested again whenever a hop needs them
+        ┌─────────────────── repeat until the frontier is empty ───────────────────┐
+        │                                                                          │
+        ▼                                                                          │
+  netwalk-login  ──►  netwalk-scan  ──►  netwalk-diag  ───────────────────────────┘
+   get access          crawl a hop        read its health
+   (form stays open)   find neighbours    export config, find faults
+        ▲                    │
+        └── new devices ─────┘   each round's discoveries go back on the same form
+
+                    when the crawl runs dry, or the engineer says enough
+                                          │
+                                          ▼
+                        netwalk-map  ──►  netwalk-fullreport
+                          draw it           hand it over
 ```
+
+`netwalk-login`, `netwalk-scan` and `netwalk-diag` are **one loop, not three phases**. Every hop turns up devices nobody
+mentioned; those go straight back onto the credential form that is already open, the engineer answers
+them at their own pace, and the crawl carries on. It ends when a round finds nothing the engineer has
+not already ruled on — or when they decide the coverage is good enough. `map` and `fullreport` run
+once at the end, over whatever the loop actually reached.
 
 ### The two promises
 
@@ -96,6 +112,22 @@ Before running anything:
   produce different scans. Ask.
 
 Pick a site slug (`acme-hq`). Everything for the engagement lands in `~/.netwalk/sites/<slug>/` — outside the installed toolkit, so an upgrade cannot delete it.
+
+### The loop, and how it ends
+
+Stages 1 to 3 repeat. Do not run them once each and call the survey done: a crawl discovers devices
+over minutes, each round turns up neighbours nobody mentioned, and those go back on the credential
+form that is already open rather than into the conversation.
+
+Two things end the loop, and only two:
+
+- **the frontier is empty** — a round finds no device the engineer has not already ruled on, whether
+  by giving a credential, saying "I don't know what this is", marking it out of scope, or deferring it
+- **the engineer says the coverage is good enough** — a legitimate answer on a large site, and one you
+  should offer explicitly rather than crawling on
+
+Either way, write what was reached and what was not into `coverage.not_covered` before moving on.
+Stages 4 and 5 run **once**, at the end, over whatever the loop actually reached.
 
 ### Stage 1 — access (`netwalk-login`)
 
