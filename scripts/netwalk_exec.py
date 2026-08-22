@@ -21,6 +21,7 @@ import re
 import subprocess
 import sys
 from datetime import datetime, timezone
+from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import netwalk_common as C  # noqa: E402
@@ -91,10 +92,56 @@ def load_host(site: str, host: str) -> dict:
 
 
 def scrub(text: str, secrets: list[str]) -> str:
+    """Mask credentials we know about (from the vault) wherever a device echoes them."""
     for s in secrets:
         if s and len(s) >= 3:
             text = text.replace(s, "***")
     return text
+
+
+# Secrets that live in the DEVICE's own config rather than in our vault: PSKs, SNMP
+# communities, RADIUS shared secrets, password hashes. A config export is full of
+# them. Anything this tool prints ends up in the caller's context - and for an AI
+# agent that means it is transmitted and retained - so it is masked by default.
+# The file written by --out is never redacted; full fidelity stays on disk.
+# Keyword that names a secret. Real configs prefix these constantly - MYSQL_PASSWORD,
+# GF_SECURITY_ADMIN_PASSWORD, DB_PASSWORD, wpa2-pre-shared-key - so the prefix has to be
+# part of the pattern. Missing that is exactly how a container env block full of database
+# passwords sails through a redactor that only looks for a bare `password=`.
+_SECRET_WORD = (r'[\w.\-]*'
+                r'(?:passwords?|passwd|pwd|secrets?|psk|passphrase|pre[-_]?shared[-_]?key|'
+                r'shared[-_]?secret|auth[-_]?key|enc(?:ryption)?[-_]?key|community|'
+                r'api[-_]?key|access[-_]?key|token|credentials?)')
+# Stop at a comma or a quote: env strings pack several secrets into one value and a
+# greedy match would either miss the later ones or eat the whole line.
+_SECRET_VAL = r'("[^"]*"|\'[^\']*\'|[^\s,"\']+)'
+
+DEVICE_SECRETS = [
+    (re.compile(r'(?i)((?:^|[^\w.\-])' + _SECRET_WORD + r'\s*[:=]\s*)' + _SECRET_VAL),
+     r"\1<redacted>"),
+    # whitespace-separated, trusted only for a quoted value so ordinary prose survives
+    (re.compile(r'(?i)((?:^|[^\w.\-])' + _SECRET_WORD + r'\s+)("[^"]*"|\'[^\']*\')'),
+     r"\1<redacted>"),
+    (re.compile(r'(?im)^(\s*(?:enable\s+)?secret\s+\d?\s*)(\S+)'), r"\1<redacted>"),
+    (re.compile(r'(?im)^(\s*username\s+\S+\s+(?:privilege\s+\d+\s+)?'
+                r'(?:secret|password)\s+\d?\s*)(\S+)'), r"\1<redacted>"),
+    (re.compile(r'(?i)(snmp-server\s+community\s+)(\S+)'), r"\1<redacted>"),
+    (re.compile(r'(?i)(-----BEGIN [A-Z ]*PRIVATE KEY-----)[\s\S]*?'
+                r'(-----END [A-Z ]*PRIVATE KEY-----)'), r"\1<redacted>\2"),
+]
+
+# RouterOS (and others) wrap long lines with a trailing backslash, which can split a
+# secret in half and let the tail through. Join continuations before matching.
+_CONTINUATION = re.compile(r"\\\n\s*")
+
+
+def redact_device_secrets(text: str) -> tuple[str, int]:
+    hits = 0
+    text = _CONTINUATION.sub("", text)
+    for pat, repl in DEVICE_SECRETS:
+        text, n = pat.subn(repl, text)
+        hits += n
+    return text, hits
 
 
 def _needs_password(entry: dict) -> bool:
@@ -198,7 +245,8 @@ def _run_plink(entry: dict, command: str, timeout: int) -> tuple[str, str, int]:
     return _run_subprocess(argv, dict(os.environ), timeout)
 
 
-def run_one(entry: dict, command: str, timeout: int, max_bytes: int) -> dict:
+def run_one(entry: dict, command: str, timeout: int, max_bytes: int,
+            redact: bool = True) -> dict:
     vendor = entry.get("vendor") or "unknown"
     verdict = policy.check(command, vendor)
     started = now_iso()
@@ -225,14 +273,19 @@ def run_one(entry: dict, command: str, timeout: int, max_bytes: int) -> dict:
         argv, env = build_ssh_argv(entry, command, backend)
         out, err, rc = _run_subprocess(argv, env, timeout)
 
-    truncated = len(out) > max_bytes
-    if truncated:
-        out = out[:max_bytes]
-
     secrets = _secrets_of(entry)
+    raw = scrub(out, secrets)          # full fidelity, for --out / the operator's disk
+    shown = raw
+    redacted = 0
+    if redact:
+        shown, redacted = redact_device_secrets(shown)
+    truncated = len(shown) > max_bytes
+    if truncated:
+        shown = shown[:max_bytes]
+
     return {**base, "allowed": True, "backend": backend, "exit_code": rc,
-            "stdout": scrub(out, secrets), "stderr": scrub(err, secrets),
-            "truncated": truncated, "bytes_out": len(out)}
+            "stdout": shown, "raw_stdout": raw, "stderr": scrub(err, secrets),
+            "truncated": truncated, "bytes_out": len(raw), "redacted": redacted}
 
 
 def append_evidence(path: str, host: str, res: dict) -> None:
@@ -253,10 +306,16 @@ def cmd_run(args: argparse.Namespace) -> int:
         die("give at least one --cmd or a --cmd-file")
 
     entry = load_host(args.site, args.host)
+    out_fh = None
+    if args.out:
+        Path(args.out).parent.mkdir(parents=True, exist_ok=True)
+        out_fh = open(args.out, "w", encoding="utf-8")
     results = []
     worst = 0
     for c in commands:
-        res = run_one(entry, c, args.timeout, args.max_bytes)
+        res = run_one(entry, c, args.timeout, args.max_bytes, redact=not args.raw)
+        if out_fh and res.get("allowed"):
+            out_fh.write(f"### {c}\n{res.get('raw_stdout', '')}\n")
         results.append(res)
         if args.evidence:
             append_evidence(args.evidence, args.host, res)
@@ -265,7 +324,21 @@ def cmd_run(args: argparse.Namespace) -> int:
         elif res.get("exit_code"):
             worst = max(worst, 1)
 
+    if out_fh:
+        out_fh.close()
+        harden = C.harden_path(Path(args.out))
+        total = sum(r.get("bytes_out", 0) for r in results)
+        print(f"wrote {total:,} bytes from {len(results)} command(s) to {args.out} [{harden[1]}]")
+        print("NOT printed here on purpose - a config export contains PSKs, community "
+              "strings and password hashes, and anything printed enters the agent's context.")
+        for res in results:
+            flag = "BLOCKED" if not res["allowed"] else ("ok" if not res.get("exit_code") else f"exit {res['exit_code']}")
+            print(f"  {flag:>8}  {res['command']}")
+        return worst
+
     if args.json:
+        for r in results:
+            r.pop("raw_stdout", None)
         print(json.dumps({"host": args.host, "site": args.site,
                           "vendor": entry.get("vendor"), "results": results}, indent=2))
         return worst
@@ -279,6 +352,9 @@ def cmd_run(args: argparse.Namespace) -> int:
             print(res["stdout"].rstrip())
         if res.get("truncated"):
             print(f"... [truncated at {args.max_bytes} bytes]")
+        if res.get("redacted"):
+            print(f"--- {res['redacted']} secret value(s) in this output were replaced with "
+                  f"<redacted>; use --out to keep the full text on disk", file=sys.stderr)
         if res.get("stderr", "").strip():
             print(f"--- stderr: {res['stderr'].strip()}", file=sys.stderr)
         if res.get("exit_code"):
@@ -332,6 +408,12 @@ def main() -> int:
     r.add_argument("--evidence", help="append a JSONL line per command for the report's evidence log")
     r.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT)
     r.add_argument("--max-bytes", type=int, default=DEFAULT_MAX_BYTES)
+    r.add_argument("--out", help="write the FULL device output to this file and print only a "
+                                 "summary - use this for config exports so their secrets never "
+                                 "enter the caller's context")
+    r.add_argument("--raw", action="store_true",
+                   help="do not mask PSKs/community strings/hashes in what is printed. "
+                        "Only for a human at a terminal.")
     r.add_argument("--json", action="store_true")
     r.set_defaults(func=cmd_run)
 

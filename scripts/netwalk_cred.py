@@ -230,6 +230,11 @@ class Receiver(BaseHTTPRequestHandler):
     def _authorised(self) -> bool:
         return self.path.rstrip("/").endswith("/" + type(self).token)
 
+    def _own_origins(self) -> set[str]:
+        port = self.server.server_address[1]
+        return {f"http://127.0.0.1:{port}", f"http://localhost:{port}",
+                f"http://[::1]:{port}"}
+
     def do_GET(self):  # noqa: N802
         if not self._authorised():
             return self._send(404, b"not found", "text/plain")
@@ -241,10 +246,15 @@ class Receiver(BaseHTTPRequestHandler):
         cls = type(self)
         if self.path.rstrip("/") != f"/{cls.token}/save":
             return self._send(404, b"not found", "text/plain")
-        # A cross-origin page can only send simple requests; JSON content-type forces
-        # a preflight we never answer, and any Origin at all means it is not our form.
-        if self.headers.get("Origin"):
-            return self._json(403, {"ok": False, "error": "cross-origin post rejected"})
+        # Browsers attach Origin to EVERY POST, same-origin included, so "has an
+        # Origin" is not an attack signal - "has the WRONG Origin" is. Compare it
+        # against our own listener instead of rejecting the header outright.
+        origin = self.headers.get("Origin")
+        if origin and origin.rstrip("/").lower() not in self._own_origins():
+            return self._json(403, {"ok": False,
+                                    "error": "this form was not served by this listener"})
+        # A cross-origin page still cannot reach us without a preflight, which the
+        # JSON content-type forces and we never answer.
         if "application/json" not in (self.headers.get("Content-Type") or ""):
             return self._json(415, {"ok": False, "error": "expected application/json"})
         try:

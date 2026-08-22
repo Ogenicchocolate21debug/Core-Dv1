@@ -10,8 +10,8 @@ Part of the **netwalk** read-only network survey toolkit. Toolkit lives at `{{TO
 ## Run it
 
 ```bash
-python3 {{TOOLKIT}}/scripts/netwalk_map.py sites/acme-hq/scan-2026-08-22.json \
-  -o sites/acme-hq/map.svg [--public] [--title "Acme HQ — after the switch swap"]
+python3 {{TOOLKIT}}/scripts/netwalk_map.py ~/.netwalk/sites/acme-hq/scan-2026-08-22.json \
+  -o ~/.netwalk/sites/acme-hq/map.svg [--public] [--title "Acme HQ — after the switch swap"]
 ```
 
 Output is one self-contained SVG: no external fonts, no scripts, no network requests. It opens in a

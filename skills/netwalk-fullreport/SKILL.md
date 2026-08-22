@@ -13,10 +13,10 @@ This produces the thing that leaves the building. Treat it accordingly.
 
 ```bash
 T={{TOOLKIT}}
-R=sites/acme-hq/scan-2026-08-22.json
+R=~/.netwalk/sites/acme-hq/scan-2026-08-22.json
 
-python3 $T/scripts/netwalk_report.py $R -o sites/acme-hq/report.html
-python3 $T/scripts/netwalk_report.py $R -o sites/acme-hq/report-public.html --public
+python3 $T/scripts/netwalk_report.py $R -o ~/.netwalk/sites/acme-hq/report.html
+python3 $T/scripts/netwalk_report.py $R -o ~/.netwalk/sites/acme-hq/report-public.html --public
 ```
 
 One self-contained HTML file: diagram, CSS and all. No external requests, so it works offline, over

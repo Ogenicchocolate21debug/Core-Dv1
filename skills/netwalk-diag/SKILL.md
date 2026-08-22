@@ -25,20 +25,29 @@ Assumes a credential exists (`netwalk-login`) and the vendor is known.
 T={{TOOLKIT}}
 python3 $T/scripts/netwalk_exec.py run --site acme-hq --host gw01 \
   --cmd-file $T/scripts/packs/mikrotik.config.txt \
-  --evidence sites/acme-hq/evidence.jsonl > sites/acme-hq/configs/gw01.conf
+  --out ~/.netwalk/sites/acme-hq/configs/gw01.conf \
+  --evidence ~/.netwalk/sites/acme-hq/evidence.jsonl
 
 python3 $T/scripts/netwalk_exec.py run --site acme-hq --host gw01 \
   --cmd-file $T/scripts/packs/mikrotik.health.txt \
-  --evidence sites/acme-hq/evidence.jsonl
+  --evidence ~/.netwalk/sites/acme-hq/evidence.jsonl
 ```
 
 Packs: `mikrotik`, `cisco`, `aruba`, `hp`, `fortinet`, `linux`, `windows`, each with a
 `.config.txt` and a `.health.txt`. Record the exported config path in `config_export_path` —
 relative to the site folder, never pasted into the report.
 
-**A config export is not evidence-free.** Vendor configs contain PSKs, SNMP communities, RADIUS
-secrets and password hashes. Keep the export beside the scan record on the user's disk, keep it out
-of the record itself, and warn the user before they forward it to anyone.
+**Always use `--out` for a config export.** With `--out` the full text is written straight to a
+0600 file and only a one-line summary is printed. Without it, the whole config comes back through
+you — and a vendor config is packed with PSKs, SNMP communities, RADIUS secrets, password hashes and
+container environment variables. Anything that reaches you is transmitted to a model API and written
+into the session transcript, and neither can be un-sent.
+
+`netwalk_exec.py` masks secret-shaped values in whatever it prints (`<redacted>`), so an accidental
+read is survivable — but that is a safety net, not the control. The control is `--out`.
+
+Record the export path in `config_export_path`. Never `cat` it, never paste it into the record, and
+warn the user before they forward it to anyone.
 
 ### What to pull, whatever the vendor
 

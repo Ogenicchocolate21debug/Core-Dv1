@@ -37,7 +37,7 @@ Ask, and do not guess:
 4. **How far?** Default is exhaustive: keep hopping until every reachable neighbour has been
    visited. On a big site, say up front roughly how many hops that might be and check in.
 
-Pick a site slug (`acme-hq`) and create `sites/<slug>/`.
+Pick a site slug (`acme-hq`). Everything for the engagement lands in `~/.netwalk/sites/<slug>/` — outside the installed toolkit, so an upgrade cannot delete it.
 
 ## The loop
 
@@ -55,7 +55,7 @@ For each device, in this order:
    python3 {{TOOLKIT}}/scripts/netwalk_exec.py run \
      --site acme-hq --host gw01 \
      --cmd-file {{TOOLKIT}}/scripts/packs/mikrotik.discovery.txt \
-     --evidence sites/acme-hq/evidence.jsonl
+     --evidence ~/.netwalk/sites/acme-hq/evidence.jsonl
    ```
 
    Packs exist for `mikrotik`, `cisco`, `aruba`, `hp`, `fortinet`, `linux`, `windows`. For a vendor
@@ -64,7 +64,12 @@ For each device, in this order:
    Some commands in a pack will not exist on a given model — a failed command is normal, not a
    reason to stop.
 
-4. **Map the output into the scan record**, `sites/<slug>/scan-<YYYY-MM-DD>.json`, against
+   For a **config export**, always add `--out <file>`. That writes the full text to a 0600 file
+   and prints only a summary — a config is full of PSKs, community strings and password hashes, and
+   anything printed reaches you, the model API and the transcript. Secret-shaped values in printed
+   output are masked as `<redacted>` as a backstop, but `--out` is the actual control.
+
+4. **Map the output into the scan record**, `~/.netwalk/sites/<slug>/scan-<YYYY-MM-DD>.json`, against
    `{{TOOLKIT}}/schema/netwalk-record.schema.json`. Per device, capture at minimum:
 
    - identity: hostname, model, serial, OS + version, uptime, role
@@ -109,8 +114,8 @@ every neighbour sighting:
 After each hop or small batch, re-run the map and report rather than waiting for the crawl to end:
 
 ```bash
-python3 {{TOOLKIT}}/scripts/netwalk_map.py    sites/acme-hq/scan-2026-08-22.json -o sites/acme-hq/map.svg
-python3 {{TOOLKIT}}/scripts/netwalk_report.py sites/acme-hq/scan-2026-08-22.json -o sites/acme-hq/report.html
+python3 {{TOOLKIT}}/scripts/netwalk_map.py    ~/.netwalk/sites/acme-hq/scan-2026-08-22.json -o ~/.netwalk/sites/acme-hq/map.svg
+python3 {{TOOLKIT}}/scripts/netwalk_report.py ~/.netwalk/sites/acme-hq/scan-2026-08-22.json -o ~/.netwalk/sites/acme-hq/report.html
 ```
 
 A partial map beats no map, and the user can correct a wrong assumption at hop 2 instead of hop 9.

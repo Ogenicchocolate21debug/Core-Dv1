@@ -49,8 +49,10 @@ def copy_runtime(dest: Path) -> None:
     for f in ("README.md", "LICENSE"):
         if (REPO / f).exists():
             shutil.copy2(REPO / f, dest / f)
-    # keep the credential store out of any directory that might get synced or committed
-    (dest / "sites").mkdir(exist_ok=True)
+    # NOTE: nothing from an engagement is ever stored here. This directory is
+    # deleted and rewritten on every upgrade; scan records live under
+    # $NETWALK_HOME/sites (default ~/.netwalk/sites) precisely so an upgrade
+    # cannot take a customer's scan history with it.
 
 
 def install(skills_dir: Path) -> int:

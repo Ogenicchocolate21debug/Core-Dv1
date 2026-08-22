@@ -38,6 +38,23 @@ def creds_dir() -> Path:
     return d
 
 
+def sites_dir() -> Path:
+    """Where scan records, configs and reports live.
+
+    Deliberately NOT inside the installed toolkit: `install.py` replaces that
+    directory wholesale on upgrade, which would delete a customer's scan history.
+    """
+    d = netwalk_home() / "sites"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def site_dir(slug: str) -> Path:
+    d = sites_dir() / slugify(slug)
+    (d / "configs").mkdir(parents=True, exist_ok=True)
+    return d
+
+
 def known_hosts() -> Path:
     p = netwalk_home() / "known_hosts"
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -159,6 +176,7 @@ def preflight() -> int:
     print(f"netwalk home     : {netwalk_home()}")
     d = creds_dir()
     print(f"credential store : {d}  [{perm_report(d)}]")
+    print(f"scan records     : {sites_dir()}")
     print(f"ssh binary       : {ssh_binary() or 'NOT FOUND'}")
     for label, needs_pw in (("key auth", False), ("password auth", True)):
         backend, why = detect_transport(needs_pw)

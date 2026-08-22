@@ -42,7 +42,7 @@ Before running anything:
 - **What are we actually answering?** "Document the network" and "find why the Wi-Fi drops at 2pm"
   produce different scans. Ask.
 
-Pick a site slug (`acme-hq`) and create `sites/<slug>/`.
+Pick a site slug (`acme-hq`). Everything for the engagement lands in `~/.netwalk/sites/<slug>/` — outside the installed toolkit, so an upgrade cannot delete it.
 
 ## Stage 1 — access (`netwalk-login`)
 
@@ -88,7 +88,7 @@ it. The renderer refuses to build a report from a record containing credential m
 ## Layout on disk
 
 ```
-sites/<slug>/
+~/.netwalk/sites/<slug>/
   scan-YYYY-MM-DD.json   the record - single source of truth, never overwritten
   evidence.jsonl         every command run, appended as it happens
   configs/<host>.conf    read-only config exports  (contain secrets - never into the report)

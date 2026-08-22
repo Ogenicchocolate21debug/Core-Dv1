@@ -156,10 +156,10 @@ both rendered from it, deterministically — so the same record always produces 
 scans of one site diff cleanly, and a changed report means a changed network. Never hand-edit the
 SVG or the HTML; fix the record and re-render.
 
-Everything for a real engagement lands under `sites/<slug>/`, which is git-ignored:
+Everything for a real engagement lands under `~/.netwalk/sites/<slug>/`, which is git-ignored:
 
 ```
-sites/acme-hq/
+~/.netwalk/sites/acme-hq/
   scan-2026-08-22.json     the record
   evidence.jsonl           every command that was run
   configs/gw01.conf        read-only config exports (these DO contain secrets - keep them local)
