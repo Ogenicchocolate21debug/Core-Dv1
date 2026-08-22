@@ -368,6 +368,55 @@ def cmd_check(args: argparse.Namespace) -> int:
     return 0 if v.allowed else 1
 
 
+def server_auth_methods(entry: dict, timeout: int = 10) -> list[str]:
+    """Ask the device which authentication methods it will accept.
+
+    `Permission denied (publickey)` on a host where you stored a password reads like
+    a wrong password. It is not - it means the device will never accept one. Saying
+    so turns a retype-the-password loop into a one-line fix.
+    """
+    ssh = C.ssh_binary()
+    if not ssh:
+        return []
+    # -v is required: the method list is a debug1 line. Every auth type is switched
+    # off so this asks the question without making a login attempt the device would
+    # log as a failure.
+    argv = [ssh, "-v", "-o", "BatchMode=yes",
+            "-o", "PubkeyAuthentication=no", "-o", "PasswordAuthentication=no",
+            "-o", "KbdInteractiveAuthentication=no",
+            "-o", f"UserKnownHostsFile={C.known_hosts()}",
+            "-o", "StrictHostKeyChecking=accept-new", "-o", "ConnectTimeout=8",
+            "-p", str(entry.get("port") or 22),
+            f"{entry.get('username','')}@{entry.get('ip')}" if entry.get("username")
+            else str(entry.get("ip")), "exit"]
+    try:
+        r = subprocess.run(argv, capture_output=True, timeout=timeout)
+    except Exception:  # noqa: BLE001
+        return []
+    m = re.search(r"Authentications that can continue:\s*([\w,\-]+)",
+                  r.stderr.decode("utf-8", "replace"))
+    return m.group(1).split(",") if m else []
+
+
+def diagnose_auth(entry: dict) -> str:
+    """One actionable line explaining an authentication failure."""
+    accepts = server_auth_methods(entry)
+    if not accepts:
+        return ("could not determine which authentication methods the device accepts - "
+                "check the IP, the port, and whether SSH is enabled at all")
+    stored = entry.get("method") or "unknown"
+    have = "publickey" if stored in ("key", "key+password") else "password"
+    if have in accepts or (have == "password" and "keyboard-interactive" in accepts):
+        return (f"the device accepts {','.join(accepts)} and you stored a {stored} credential, "
+                f"so the credential itself is being rejected - check the username and the value")
+    if stored == "password" and accepts == ["publickey"]:
+        return ("this device accepts publickey ONLY - a password will never work here, however "
+                "correct it is. Re-run /netwalk-login, choose 'SSH key file', and give the path "
+                "to a key already authorised on the device (RouterOS: /user ssh-keys print)")
+    return (f"the device accepts {','.join(accepts)} but you stored a {stored} credential - "
+            f"re-run /netwalk-login and pick a method the device supports")
+
+
 PROBE = {
     "mikrotik": "/system resource print",
     "cisco": "show version",
@@ -391,7 +440,10 @@ def cmd_probe(args: argparse.Namespace) -> int:
     if ok:
         print(res["stdout"].strip()[:600])
         return 0
-    print((res.get("stderr") or res.get("reason") or "no output").strip()[:400], file=sys.stderr)
+    err = (res.get("stderr") or res.get("reason") or "no output").strip()
+    print(err[:400], file=sys.stderr)
+    if "permission denied" in err.lower() or "authentication" in err.lower():
+        print(f"  -> {diagnose_auth(entry)}", file=sys.stderr)
     return 1
 
 

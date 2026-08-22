@@ -367,6 +367,36 @@ def cmd_request(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_set_key(args: argparse.Namespace) -> int:
+    """Register a key-only credential straight from the CLI.
+
+    Deliberately accepts NO password, token or passphrase - not as a convenience but
+    as a guarantee. A key path is not a secret and never needed the browser round
+    trip; a password on a command line lands in shell history, in the process list
+    and in any transcript watching the terminal, so it has to stay in the form.
+    """
+    key = os.path.expanduser(args.key_path)
+    if any(m in args.key_path for m in KEY_MATERIAL_MARKERS):
+        raise SystemExit("netwalk_cred: that is key material, not a path. Pass a file path.")
+    if not os.path.exists(key):
+        print(f"WARNING key file does not exist: {key}", file=sys.stderr)
+
+    vault = load_vault(args.site)
+    vault.setdefault("hosts", {})[args.host] = {
+        "ip": args.ip or args.host, "vendor": (args.vendor or "unknown").lower(),
+        "method": "key", "port": args.port, "username": args.username,
+        "password": None, "key_path": key, "enable_password": None,
+        "api_token": None, "note": args.note or "", "stored_at": now_iso(),
+    }
+    vault["updated_at"] = now_iso()
+    path, ok, how = write_vault(args.site, vault)
+    print(f"stored key credential for {args.host} -> {path}")
+    print(f"protection: {how}")
+    if not ok:
+        print("WARNING could not lock the file down on this machine", file=sys.stderr)
+    return 0
+
+
 def cmd_list(args: argparse.Namespace) -> int:
     p = vault_path(args.site)
     if not p.exists():
@@ -422,6 +452,18 @@ def main() -> int:
                    help="seconds to wait for a submit; 0 = wait until stopped")
     r.add_argument("--no-open", action="store_true", help="do not launch a browser")
     r.set_defaults(func=cmd_request)
+
+    k = sub.add_parser("set-key", help="register a KEY-ONLY credential from the CLI "
+                                       "(no password option, by design)")
+    k.add_argument("--site", required=True)
+    k.add_argument("--host", required=True)
+    k.add_argument("--ip")
+    k.add_argument("--vendor", default="unknown")
+    k.add_argument("--username", required=True)
+    k.add_argument("--key-path", required=True, help="path to the private key file")
+    k.add_argument("--port", type=int, default=22)
+    k.add_argument("--note", default="")
+    k.set_defaults(func=cmd_set_key)
 
     l = sub.add_parser("list", help="show WHICH hosts have credentials - never the values")
     l.add_argument("--site", required=True)
