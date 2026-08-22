@@ -139,14 +139,21 @@ button:disabled{opacity:.5;cursor:default}
 """
 
 FORM_JS = """
+var PORT_FOR={key:'22',password:'22','key+password':'22',api:'8443'};
 function sync(el){
   var card=el.closest('.host'), m=el.value;
+  var pf=card.querySelector('[name=port]');
+  if(pf){ pf.placeholder=PORT_FOR[m]||'22';
+    if(!pf.dataset.touched) pf.value=''; }
   card.querySelectorAll('[data-when]').forEach(function(f){
     var show=f.dataset.when.split(' ').indexOf(m)>=0;
     f.classList.toggle('hidden',!show);
     f.querySelectorAll('input').forEach(function(i){i.disabled=!show});
   });
 }
+document.querySelectorAll('[name=port]').forEach(function(p){
+  p.addEventListener('input',function(){p.dataset.touched='1'});
+});
 document.querySelectorAll('select[name=method]').forEach(function(s){sync(s);s.addEventListener('change',function(){sync(s)})});
 document.getElementById('f').addEventListener('submit',function(e){
   e.preventDefault();
@@ -170,7 +177,8 @@ document.getElementById('f').addEventListener('submit',function(e){
     c.querySelectorAll('[name^="ask::"]').forEach(function(el){
       if(el.value.trim()) ans[el.name.slice(5)]=el.value.trim();
     });
-    out[id]={ip:c.dataset.ip,vendor:c.dataset.vendor,method:m,port:g('port')||'22',
+    out[id]={ip:c.dataset.ip,vendor:c.dataset.vendor,method:m,
+      port:g('port')||(m==='api'?'8443':'22'),
       username:g('username'),password:g('password'),key_path:kp,
       enable_password:g('enable_password'),api_token:g('api_token'),note:g('note'),
       mgmt_url:g('mgmt_url'),jump_host:g('jump_host'),tenant:g('tenant'),answers:ans};

@@ -73,13 +73,18 @@ class Controller:
             self.base = f"{u.scheme}://{u.hostname}:{port}"
         else:
             host = entry.get("ip") or ""
-            port = entry.get("port") or 8443
-            self.base = f"https://{host}:{port}"
+            port = entry.get("port")
+            # 22 is the form's SSH default leaking through, never a controller port.
+            self.candidates = ([port] if port and int(port) != 22 else [8443, 443, 8080])
+            self.host = host
+            self.base = f"https://{host}:{self.candidates[0]}"
         self.api_key = entry.get("api_token")
         self.username = entry.get("username")
         self.password = entry.get("password")
         self.verify = verify
         self.flavour = None          # "integration" | "unifios" | "classic"
+        self.candidates = getattr(self, "candidates", None)
+        self.host = getattr(self, "host", entry.get("ip") or "")
         ctx = ssl.create_default_context()
         if not verify:
             ctx.check_hostname = False
@@ -130,6 +135,18 @@ class Controller:
 
     def connect(self) -> str:
         """Work out which API this controller speaks and authenticate. Returns a note."""
+        if self.candidates and len(self.candidates) > 1:
+            for port in self.candidates:
+                scheme = "http" if port == 8080 else "https"
+                self.base = f"{scheme}://{self.host}:{port}"
+                code, _ = self.get("/")
+                if code:
+                    print(f"controller answers on {self.base}", file=sys.stderr)
+                    break
+            else:
+                die(f"nothing answered on {self.host} ports "
+                    f"{', '.join(str(p) for p in self.candidates)}. Put the real address "
+                    f"in 'Management URL' on the login form.", 4)
         if self.api_key:
             code, body = self.get("/proxy/network/integration/v1/sites")
             if code == 200 and isinstance(body, dict) and "data" in body:
