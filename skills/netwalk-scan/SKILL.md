@@ -27,8 +27,8 @@ a different command, or add it to the allowlist in `scripts/netwalk_policy.py`, 
 Ask, and do not guess:
 
 1. **What is the target?** An entry device (IP), a subnet, a site name, "my whole office"? You need
-   at least one device you can log into. netwalk crawls *from* a device; it is not a port scanner
-   and does not sweep ranges the user has not named.
+   at least one device you can log into — netwalk crawls *from* a device. It can also sweep an
+   address range, but only one the owner has explicitly authorised; see **Sweeping a range** below.
 2. **Whose network is it?** If it is a customer's, confirm the user is authorised to log into this
    equipment today. Record what they say in `site.scope_note` — it goes in the report.
 3. **Anything off limits?** Production boxes that must not even be logged into, a maintenance
@@ -161,6 +161,64 @@ For each device, in this order:
    user answers in the browser in one pass. Asking them one at a time in the chat is the slow way,
    and the answers are not secrets so `answers` reads them straight back.
 
+## Sweeping a range
+
+The crawl finds the managed estate — whatever speaks LLDP, appears in an ARP table, or holds a DHCP
+lease. It misses the printer nobody remembers, the old server on a static address, the second
+firewall someone left plugged in. A sweep is the other half of the picture, and on most sites it is
+where the surprises are.
+
+**It cannot run until the owner has authorised the range, by name.** That is enforced in code:
+
+```bash
+python3 {{TOOLKIT}}/scripts/netwalk_sweep.py authorize --site acme-hq \
+  --range 10.2.30.0/24 --range 10.2.40.0/24 \
+  --authorized-by "Khun Somchai, IT manager, by phone 2026-08-22" \
+  --exclude 10.2.30.99          # a box he asked us to leave alone
+```
+
+The name goes in `scope.json` and comes out again in the report. There is no `--force`: a range
+outside the scope is refused, a supernet of an authorised range is refused, public address space
+needs a second explicit flag, and anything larger than a /16 is refused outright. If you find
+yourself wanting to get past the gate, the answer is to ask the owner, not to edit the file.
+
+```bash
+# which addresses answer at all - TCP connect to a few common ports, plus one ping
+python3 {{TOOLKIT}}/scripts/netwalk_sweep.py hosts --site acme-hq --range 10.2.30.0/24
+
+# what those addresses are listening on - ~68 well-known TCP ports by default
+python3 {{TOOLKIT}}/scripts/netwalk_sweep.py ports --site acme-hq --target 10.2.30.99 \
+  --profile standard            # or --profile quick, or --ports 22,80,8000-8010
+
+# fold the results into the scan record and list what is not in devices[] yet
+python3 {{TOOLKIT}}/scripts/netwalk_sweep.py record --site acme-hq \
+  --record ~/.netwalk/sites/acme-hq/scan-2026-08-22.json
+```
+
+Three things to know before you read the output:
+
+- **A refused connection proves a host is there**, exactly as well as an open one does. A box with
+  every port closed still appears in the results, and that is deliberate.
+- **The sweep is blind to UDP.** SNMP, DNS over UDP, IPMI, syslog and IKE do not show up at all, and
+  neither does a host whose firewall drops instead of rejecting. `record` writes that limitation
+  into `coverage.not_covered` for you. Do not let the report imply the list is exhaustive.
+- **Ports carry a `risk` note when finding them open is a finding by itself** — telnet, SMB, RDP,
+  VNC, Redis, Winbox, a database answering on a user VLAN. `ports` prints them; you still have to
+  write them into `findings[]` with the port as evidence.
+
+**Where the sweep runs from matters.** By default it runs from your machine, so it only sees what
+your machine can route to — a management VLAN you are not on will look empty rather than absent:
+
+| Situation | What to use |
+|---|---|
+| you are on the LAN, or on a VPN into it | the default, no extra flags |
+| the range is only reachable from inside the site | `--via user@linux-host` — an `ssh -D` SOCKS tunnel through a Linux box you already have a credential for |
+| the only way in is a MikroTik | RouterOS refuses dynamic forwarding, so `--via` cannot work. Run the sweep on the router instead: `netwalk_exec.py run --cmd '/tool ip-scan address-range=10.2.30.0/24 duration=30s'` — the allowlist requires `duration=`, so it cannot run unbounded |
+
+Every address that answers and is not already in `devices[]` goes on the credential form, including —
+especially — the ones you cannot identify. `record` prints that list for you. The rule from the
+crawl applies unchanged here: an unrecognised host is not evidence the host is dull.
+
 ## Deriving topology
 
 `topology_edges` is what the diagram is drawn from, so build it deliberately rather than dumping
@@ -200,7 +258,8 @@ keeps the report honest.
 ## Never
 
 - Change configuration. Report the fix; the site owner applies it.
-- Scan an address range the user did not name, or hop into a device outside the agreed scope.
+- Sweep a range that is not in `scope.json`, or hop into a device outside the agreed scope. If the
+  gate refuses a range, get the owner's authorisation and record it — never route around it.
 - Put a credential anywhere in the scan record.
 - Present an incomplete crawl as complete.
 

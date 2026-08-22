@@ -34,7 +34,7 @@ them at their own pace, and the crawl carries on. It ends when a round finds not
 not already ruled on — or when they decide the coverage is good enough. `map` and `fullreport` run
 once at the end, over whatever the loop actually reached.
 
-## The two promises
+## The three promises
 
 1. **Read-only.** Every command is checked against a per-vendor allowlist in
    `scripts/netwalk_policy.py` before it is sent. Config writes, counter clears, service restarts
@@ -44,16 +44,21 @@ once at the end, over whatever the loop actually reached.
    carries the *access* questions: which URL, which port, which jump host, which controller site. When
    you are blocked on how to reach something, put the question on the form with `--ask` and let the
    user answer it there, rather than asking across several conversational turns.
+3. **No unauthorised sweeping.** `netwalk_sweep.py` refuses any address range that is not in
+   the site's `scope.json` with the name of whoever authorised it. There is no override flag.
+   Crawling from a device you were given a credential for is not the same as probing addresses
+   nobody named.
 
-Both are enforced in code. Do not route around either. If a read-only command is wrongly blocked,
+All three are enforced in code. Do not route around any of them. If a read-only command is wrongly blocked,
 add it to the allowlist, run `python3 {{TOOLKIT}}/tests/test_policy.py`, and say you did.
 
 ## Stage 0 — scope it
 
 Before running anything:
 
-- **What is the target?** netwalk needs one device it can log into and crawls out from there. It is
-  not a port scanner and will not sweep a range the user has not named.
+- **What is the target?** netwalk needs one device it can log into and crawls out from there. It can
+  also sweep an address range, but only after the owner has authorised that range by name
+  (`netwalk_sweep.py authorize`) — the gate is enforced in code and has no override.
 - **Whose network is it?** For a customer site, confirm the user is authorised to log into this
   equipment today, and write what they say into `site.scope_note`. It appears in the report.
 - **What is off limits?** Fragile boxes, maintenance windows, devices to leave alone. Record them
@@ -97,6 +102,22 @@ the user can answer "I don't know what this is" or "not ours" per device, and bo
 that go in the report. Stop when a round produces nothing the user has not already ruled on. Re-run the map and report after each
 batch so the user can correct a wrong assumption early. Devices you cannot reach stay in the record
 as `reachable: false` with a reason.
+
+**Sweep the subnets the crawl walked through**, once the owner has authorised them by name. The
+crawl only finds what announces itself; a sweep finds the static-address server and the forgotten
+printer, and it is usually where the surprises are:
+
+```bash
+python3 {{TOOLKIT}}/scripts/netwalk_sweep.py authorize --site <slug> --range 10.2.30.0/24 \
+  --authorized-by "who said yes, and when"
+python3 {{TOOLKIT}}/scripts/netwalk_sweep.py hosts  --site <slug> --range 10.2.30.0/24
+python3 {{TOOLKIT}}/scripts/netwalk_sweep.py ports  --site <slug> --target 10.2.30.99
+python3 {{TOOLKIT}}/scripts/netwalk_sweep.py record --site <slug> --record <record>.json
+```
+
+Everything that answers and is not already a device goes back onto the login form — it is another
+round of the same loop, not a separate exercise. The sweep is TCP-only and therefore blind to UDP
+and to hosts that drop rather than reject; `record` writes that into `coverage.not_covered`.
 
 ## Stage 3 — diagnose (`netwalk-diag`)
 
@@ -144,5 +165,6 @@ Records accumulate one per scan date, so two surveys of one site diff cleanly.
 
 - Change anything on a surveyed device. Report the fix; the owner applies it.
 - Accept a credential in the conversation, or open the credential store yourself.
-- Scan outside the agreed scope.
+- Scan or sweep outside the agreed scope. A range the owner has not authorised by name is refused
+  by `netwalk_sweep.py`, and that refusal is the correct answer, not an obstacle.
 - Present an incomplete crawl as complete.
