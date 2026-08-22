@@ -30,12 +30,13 @@ BROWSER_BODY = {"hosts": {"r1": {"ip": "10.0.0.1", "vendor": "mikrotik", "method
                                  "port": "22", "username": "u", "password": "correct-horse"}}}
 
 
-def start() -> tuple[subprocess.Popen, str, int]:
+def start(extra: list[str] | None = None) -> tuple[subprocess.Popen, str, int]:
     env = dict(os.environ)
     env["NETWALK_HOME"] = str(HERE / ".tmp-netwalk-home")
     p = subprocess.Popen(
         [sys.executable, str(CRED), "request", "--site", SITE,
-         "--host", "r1,10.0.0.1,mikrotik", "--timeout", "20", "--no-open"],
+         "--host", "r1,10.0.0.1,mikrotik", "--timeout", "20", "--no-open",
+         *(extra or [])],
         stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=env, text=True)
     for _ in range(100):
         line = p.stdout.readline()
@@ -170,6 +171,75 @@ def _(url, port):
     assert data["hosts"]["r1"]["password"] == "correct-horse"
 
 
+@case("an agent question appears on the form and comes back answered")
+def _(url, port):
+    code, body = get(url)
+    assert code == 200 and "How do you normally reach this controller?" in body, "question not rendered"
+    assert 'name="ask::reach_how"' in body, "question input missing"
+    assert "When is the maintenance window?" in body, "form-wide question not rendered"
+    payload = dict(BROWSER_BODY)
+    payload["hosts"] = {"r1": {**BROWSER_BODY["hosts"]["r1"],
+                               "answers": {"reach_how": "https://10.2.30.10:8443", "window": "Sundays"}}}
+    code, resp = post(f"{url}/save", payload, {"Origin": f"http://127.0.0.1:{port}"})
+    assert code == 200, f"{code} {resp}"
+    data = json.loads(Path(resp["path"]).read_text())
+    ans = data["hosts"]["r1"]["answers"]
+    assert ans["reach_how"] == "https://10.2.30.10:8443" and ans["window"] == "Sundays", ans
+
+
+@case("access detail fields are stored and readable, secrets stay unreadable")
+def _(url, port):
+    payload = {"hosts": {"r1": {**BROWSER_BODY["hosts"]["r1"],
+                                "mgmt_url": "https://10.2.30.10:8443",
+                                "jump_host": "admin@10.100.2.30", "tenant": "default"}}}
+    code, body = post(f"{url}/save", payload, {"Origin": f"http://127.0.0.1:{port}"})
+    assert code == 200, f"{code} {body}"
+    env = dict(os.environ)
+    env["NETWALK_HOME"] = str(HERE / ".tmp-netwalk-home")
+    out = subprocess.run([sys.executable, str(CRED), "answers", "--site", SITE],
+                         capture_output=True, text=True, env=env)
+    both = out.stdout + out.stderr
+    for want in ("https://10.2.30.10:8443", "admin@10.100.2.30", "default"):
+        assert want in both, f"answers did not print {want}: {both}"
+    assert "correct-horse" not in both, "answers leaked the password"
+
+
+@case("Skip on a fresh host records the answer and no credential")
+def _(url, port):
+    # "Skip" means "I am not giving you a credential for this one" - the answer to
+    # WHY is often the most useful thing on the form, so it must survive. On a host
+    # that already had a credential, Skip must also not silently delete it; that is
+    # what `forget` is for.
+    payload = {"hosts": {"never-seen": {"method": "skip",
+                                        "answers": {"why": "no access granted"}}}}
+    code, body = post(f"{url}/save", payload, {"Origin": f"http://127.0.0.1:{port}"})
+    assert code == 200, f"{code} {body}"
+    e = json.loads(Path(body["path"]).read_text())["hosts"]["never-seen"]
+    assert e["answers"]["why"] == "no access granted", e
+    for secret in ("password", "key_path", "api_token", "enable_password"):
+        assert not e.get(secret), f"skip stored a {secret}"
+
+
+@case("Skip does not delete a credential the host already had")
+def _(url, port):
+    good = {"hosts": {"keepme": {"ip": "10.0.0.2", "vendor": "mikrotik", "method": "password",
+                                 "username": "u", "password": "keep-this"}}}
+    code, body = post(f"{url}/save", good, {"Origin": f"http://127.0.0.1:{port}"})
+    assert code == 200, f"{code} {body}"
+    proc2, url2, port2 = start()
+    try:
+        code, body = post(f"{url2}/save",
+                          {"hosts": {"keepme": {"method": "skip", "answers": {"why": "later"}}}},
+                          {"Origin": f"http://127.0.0.1:{port2}"})
+        assert code == 200, f"{code} {body}"
+        e = json.loads(Path(body["path"]).read_text())["hosts"]["keepme"]
+        assert e.get("password") == "keep-this", "Skip wiped an existing credential"
+        assert e["answers"]["why"] == "later", e
+    finally:
+        if proc2.poll() is None:
+            proc2.kill(); proc2.wait(timeout=5)
+
+
 @case("`list` prints host metadata and never the secret")
 def _(url, port):
     post(f"{url}/save", BROWSER_BODY, {"Origin": f"http://127.0.0.1:{port}"})
@@ -181,13 +251,17 @@ def _(url, port):
     assert "correct-horse" not in out.stdout + out.stderr, "list leaked the password"
 
 
+ASK = ["--ask", "r1|reach_how|How do you normally reach this controller?|https://host:8443",
+       "--ask", "*|window|When is the maintenance window?|"]
+
+
 def main() -> int:
     home = HERE / ".tmp-netwalk-home"
     fails = []
     for name, fn in CASES:
         proc = None
         try:
-            proc, url, port = start()
+            proc, url, port = start(ASK if "question" in name or "access detail" in name else None)
             fn(url, port)
             print(f"  ok    {name}")
         except AssertionError as e:

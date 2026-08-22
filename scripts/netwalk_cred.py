@@ -47,6 +47,20 @@ METHODS = [
 
 KEY_MATERIAL_MARKERS = ("-----BEGIN", "PRIVATE KEY", "ssh-rsa ", "ssh-ed25519 ")
 
+# Access details are NOT secrets - a URL, a port, a jump host, a tenant id. They still
+# belong on this form rather than in the chat, because the person who knows them is the
+# one sitting at the browser, and asking for them one at a time in conversation turns a
+# survey into an interrogation. They are stored alongside the secrets but, unlike the
+# secrets, `answers` prints them back.
+ACCESS_FIELDS = [
+    ("mgmt_url", "Management URL or address",
+     "https://10.2.30.10:8443  — if it differs from the IP above"),
+    ("jump_host", "Reach it through (SSH jump host)",
+     "user@10.100.2.30  — leave blank for a direct connection"),
+    ("tenant", "Site / tenant / VDOM id",
+     "UniFi site id, FortiGate VDOM, controller site name"),
+]
+
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
@@ -96,6 +110,12 @@ input,select{width:100%;padding:8px 10px;border:1px solid var(--line);border-rad
 background:var(--bg);color:var(--ink);font:14px ui-monospace,SFMono-Regular,Menlo,monospace}
 input:focus,select:focus{outline:2px solid var(--accent);outline-offset:-1px}
 .hidden{display:none}
+.more{margin:8px 0 0;border-top:1px dashed var(--line);padding-top:8px}
+.more summary{cursor:pointer;font-size:12.5px;color:var(--muted)}
+.more .row{margin-top:10px}
+.asks{margin:10px 0 0;padding:10px 12px;border-radius:9px;background:var(--bg);
+border:1px solid var(--accent)}
+.askhead{margin:0 0 8px;font-size:12.5px;font-weight:600;color:var(--accent)}
 .bar{position:sticky;bottom:0;background:var(--bg);padding:14px 0 0;border-top:1px solid var(--line);
 margin-top:22px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
 button{background:var(--accent);color:#fff;border:0;border-radius:9px;padding:11px 22px;
@@ -121,16 +141,26 @@ document.getElementById('f').addEventListener('submit',function(e){
   var out={}, bad=null;
   document.querySelectorAll('.host').forEach(function(c){
     var id=c.dataset.host, g=function(n){var el=c.querySelector('[name='+n+']');return el&&!el.disabled?el.value.trim():''};
-    var m=g('method'); if(m==='skip')return;
+    var m=g('method');
+    var skipAns={};
+    c.querySelectorAll('[name^="ask::"]').forEach(function(el){
+      if(el.value.trim()) skipAns[el.name.slice(5)]=el.value.trim();
+    });
+    if(m==='skip'){ if(Object.keys(skipAns).length) out[id]={method:'skip',answers:skipAns}; return; }
     var kp=g('key_path');
     if(/-----BEGIN|PRIVATE KEY/.test(kp)) bad='"'+id+'": paste the PATH to the key file, not the key itself.';
+    var ans={};
+    c.querySelectorAll('[name^="ask::"]').forEach(function(el){
+      if(el.value.trim()) ans[el.name.slice(5)]=el.value.trim();
+    });
     out[id]={ip:c.dataset.ip,vendor:c.dataset.vendor,method:m,port:g('port')||'22',
       username:g('username'),password:g('password'),key_path:kp,
-      enable_password:g('enable_password'),api_token:g('api_token'),note:g('note')};
+      enable_password:g('enable_password'),api_token:g('api_token'),note:g('note'),
+      mgmt_url:g('mgmt_url'),jump_host:g('jump_host'),tenant:g('tenant'),answers:ans};
   });
   var st=document.getElementById('status');
   if(bad){st.className='err';st.textContent=bad;return}
-  if(!Object.keys(out).length){st.className='err';st.textContent='Nothing to save - every device is set to Skip.';return}
+  if(!Object.keys(out).length){st.className='err';st.textContent='Nothing to save - every device is set to Skip and no question was answered.';return}
   st.className='';st.textContent='Saving...';
   document.getElementById('go').disabled=true;
   fetch(SAVE_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({hosts:out})})
@@ -155,7 +185,22 @@ def field(label: str, name: str, placeholder: str = "", type_: str = "text", whe
     )
 
 
-def render_form(site: str, hosts: list[dict], save_url: str, existing: dict) -> str:
+def render_form(site: str, hosts: list[dict], save_url: str, existing: dict,
+                asks: list[dict] | None = None) -> str:
+    asks = asks or []
+
+    def asks_for(hid: str) -> str:
+        mine = [a for a in asks if a["host"] in (hid, "*")]
+        if not mine:
+            return ""
+        rows = "".join(
+            f'<div class="f"><label>{html.escape(a["label"])}</label>'
+            f'<input type="text" name="ask::{html.escape(a["key"])}" '
+            f'placeholder="{html.escape(a.get("placeholder", ""))}" '
+            f'autocomplete="off" spellcheck="false"></div>' for a in mine)
+        return (f'<div class="asks"><p class="askhead">The assistant needs to know:</p>'
+                f'<div class="row">{rows}</div></div>')
+
     cards = []
     for h in hosts:
         hid = h["id"]
@@ -182,6 +227,10 @@ def render_form(site: str, hosts: list[dict], save_url: str, existing: dict) -> 
     {field('API token', 'api_token', '', 'password', when='api')}
   </div>
   <div class="row">{field('Note (optional)', 'note', 'e.g. read-only account, jumps via 10.0.0.9', when='key password key+password api')}</div>
+  <details class="more"><summary>Access details — how to reach it (optional, not secret)</summary>
+    <div class="row">{''.join(field(lbl, k, ph) for k, lbl, ph in ACCESS_FIELDS)}</div>
+  </details>
+  {asks_for(hid)}
 </div>""")
 
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
@@ -210,6 +259,7 @@ class Receiver(BaseHTTPRequestHandler):
     site = ""
     hosts: list[dict] = []
     existing: dict = {}
+    asks: list[dict] = []
     result: dict | None = None
 
     def log_message(self, fmt, *a):  # noqa: A003 - the URL carries the token; never log it
@@ -239,7 +289,8 @@ class Receiver(BaseHTTPRequestHandler):
         if not self._authorised():
             return self._send(404, b"not found", "text/plain")
         page = render_form(type(self).site, type(self).hosts,
-                           f"/{type(self).token}/save", type(self).existing)
+                           f"/{type(self).token}/save", type(self).existing,
+                           type(self).asks)
         self._send(200, page.encode(), "text/html; charset=utf-8")
 
     def do_POST(self):  # noqa: N802
@@ -275,7 +326,17 @@ class Receiver(BaseHTTPRequestHandler):
             if not isinstance(spec, dict):
                 continue
             method = str(spec.get("method") or "").strip()
+            answers = {str(k): str(v) for k, v in (spec.get("answers") or {}).items()}
             if method in ("", "skip"):
+                # a device we cannot log into may still be the one the user answered
+                # questions about - keep the answers, drop nothing
+                if answers:
+                    prev = vault["hosts"].get(hid, {})
+                    prev.setdefault("method", "skip")
+                    prev["answers"] = {**prev.get("answers", {}), **answers}
+                    prev["stored_at"] = now_iso()
+                    vault["hosts"][hid] = prev
+                    count += 1
                 continue
             key_path = str(spec.get("key_path") or "").strip()
             if any(m in key_path for m in KEY_MATERIAL_MARKERS):
@@ -294,6 +355,10 @@ class Receiver(BaseHTTPRequestHandler):
                 "enable_password": spec.get("enable_password") or None,
                 "api_token": spec.get("api_token") or None,
                 "note": str(spec.get("note") or "").strip(),
+                "mgmt_url": str(spec.get("mgmt_url") or "").strip() or None,
+                "jump_host": str(spec.get("jump_host") or "").strip() or None,
+                "tenant": str(spec.get("tenant") or "").strip() or None,
+                "answers": answers,
                 "stored_at": now_iso(),
             }
             vault["hosts"][hid] = entry
@@ -320,11 +385,21 @@ def cmd_request(args: argparse.Namespace) -> int:
     if not hosts:
         raise SystemExit("netwalk_cred: at least one --host is required")
 
+    asks = []
+    for spec in args.ask:
+        parts = (spec.split("|") + ["", "", ""])[:4]
+        if not parts[1].strip():
+            raise SystemExit(f"netwalk_cred: bad --ask {spec!r} (want HOST|key|Label|placeholder)")
+        asks.append({"host": parts[0].strip() or "*", "key": parts[1].strip(),
+                     "label": parts[2].strip() or parts[1].strip(),
+                     "placeholder": parts[3].strip()})
+
     existing = load_vault(args.site).get("hosts", {})
     Receiver.token = secrets.token_urlsafe(24)
     Receiver.site = args.site
     Receiver.hosts = hosts
     Receiver.existing = existing
+    Receiver.asks = asks
 
     httpd = ThreadingHTTPServer(("127.0.0.1", args.port), Receiver)
     httpd.timeout = 1
@@ -421,6 +496,37 @@ def cmd_list(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_answers(args: argparse.Namespace) -> int:
+    """Print the non-secret access details. Safe for the assistant to read - by
+    construction it touches no field that can authenticate anything."""
+    p = vault_path(args.site)
+    if not p.exists():
+        print(f"no store for site {args.site!r}")
+        return 1
+    vault = load_vault(args.site)
+    SAFE = ("ip", "port", "vendor", "method", "username", "note",
+            "mgmt_url", "jump_host", "tenant")
+    shown = 0
+    for hid, e in sorted(vault.get("hosts", {}).items()):
+        if args.host and hid != args.host:
+            continue
+        bits = {k: e.get(k) for k in SAFE if e.get(k)}
+        answers = e.get("answers") or {}
+        if not bits and not answers:
+            continue
+        shown += 1
+        print(f"\n{hid}")
+        for k, v in bits.items():
+            print(f"  {k:<12}{v}")
+        for k, v in answers.items():
+            print(f"  {k:<12}{v}   (answered on the form)")
+    if not shown:
+        print("nothing recorded yet")
+        return 1
+    print("\nSecret values are deliberately absent from this output.")
+    return 0
+
+
 def cmd_forget(args: argparse.Namespace) -> int:
     p = vault_path(args.site)
     if not p.exists():
@@ -451,6 +557,10 @@ def main() -> int:
     r.add_argument("--timeout", type=int, default=900,
                    help="seconds to wait for a submit; 0 = wait until stopped")
     r.add_argument("--no-open", action="store_true", help="do not launch a browser")
+    r.add_argument("--ask", action="append", default=[],
+                   metavar="HOST|key|Label|placeholder",
+                   help="put a question on the form instead of asking in the chat. "
+                        "HOST is a host id or * for every card. Repeatable.")
     r.set_defaults(func=cmd_request)
 
     k = sub.add_parser("set-key", help="register a KEY-ONLY credential from the CLI "
@@ -468,6 +578,12 @@ def main() -> int:
     l = sub.add_parser("list", help="show WHICH hosts have credentials - never the values")
     l.add_argument("--site", required=True)
     l.set_defaults(func=cmd_list)
+
+    a = sub.add_parser("answers", help="print the non-secret access details "
+                                       "(URL, port, jump host, tenant, form answers)")
+    a.add_argument("--site", required=True)
+    a.add_argument("--host")
+    a.set_defaults(func=cmd_answers)
 
     f = sub.add_parser("forget", help="delete stored credentials")
     f.add_argument("--site", required=True)

@@ -167,6 +167,12 @@ def build_ssh_argv(entry: dict, command: str, backend: str) -> tuple[list[str], 
 
     argv += ["ssh", "-T", "-p", port, *SSH_BASE]
 
+    # A site whose gear only answers from inside is the normal case, not the exception.
+    # The jump host comes from the login form, so the user names it once in the browser
+    # rather than being asked for it in conversation.
+    if entry.get("jump_host"):
+        argv += ["-J", entry["jump_host"]]
+
     if method in ("key", "key+password") and entry.get("key_path"):
         kp = os.path.expanduser(entry["key_path"])
         if not os.path.exists(kp):
@@ -265,6 +271,9 @@ def run_one(entry: dict, command: str, timeout: int, max_bytes: int,
     if backend == "none":
         die(f"cannot connect to {entry.get('ip')}: {why}", 4)
 
+    if backend == "paramiko" and entry.get("jump_host"):
+        die("this host is set to connect through a jump host, which needs the OpenSSH "
+            "client. Install OpenSSH, or clear the jump host on the login form.", 4)
     if backend == "paramiko":
         out, err, rc = _run_paramiko(entry, command, timeout)
     elif backend == "plink":
@@ -435,7 +444,8 @@ def cmd_probe(args: argparse.Namespace) -> int:
     res = run_one(entry, PROBE.get(name, "show version"), args.timeout, 4000)
     ok = res.get("exit_code") == 0 and res.get("stdout", "").strip()
     backend, why = C.detect_transport(_needs_password(entry))
-    print(f"{'REACHABLE' if ok else 'FAILED'} {args.host} ({entry.get('ip')}) "
+    via = f" via {entry['jump_host']}" if entry.get("jump_host") else ""
+    print(f"{'REACHABLE' if ok else 'FAILED'} {args.host} ({entry.get('ip')}){via} "
           f"vendor={entry.get('vendor')} profile={name} transport={backend}")
     if ok:
         print(res["stdout"].strip()[:600])

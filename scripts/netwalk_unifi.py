@@ -62,9 +62,19 @@ class Controller:
     """Minimal read-only UniFi client that speaks both API generations."""
 
     def __init__(self, entry: dict, verify: bool = False):
-        host = entry.get("ip") or ""
-        port = entry.get("port") or 443
-        self.base = f"https://{host}:{port}"
+        # The form's "Management URL" wins: a controller rarely answers on the address
+        # its devices use, and the person at the browser is the one who knows which.
+        url = (entry.get("mgmt_url") or "").strip()
+        if url:
+            if "://" not in url:
+                url = "https://" + url
+            u = urllib.parse.urlsplit(url)
+            port = u.port or (443 if u.scheme == "https" else 8443)
+            self.base = f"{u.scheme}://{u.hostname}:{port}"
+        else:
+            host = entry.get("ip") or ""
+            port = entry.get("port") or 8443
+            self.base = f"https://{host}:{port}"
         self.api_key = entry.get("api_token")
         self.username = entry.get("username")
         self.password = entry.get("password")
@@ -340,8 +350,8 @@ def cmd_sites(args) -> int:
 
 
 def cmd_collect(args) -> int:
-    ctrl, _ = _open(args)
-    usite = args.unifi_site
+    ctrl, entry = _open(args)
+    usite = args.unifi_site or (entry.get("tenant") or "").strip() or None
     if not usite:
         sites = ctrl.list_sites()
         usite = (sites[0].get("id") or sites[0].get("name") or sites[0].get("_id")) if sites else "default"

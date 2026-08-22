@@ -7,9 +7,9 @@ description: "Collect device credentials for a netwalk survey through a local br
 
 Part of the **netwalk** read-only network survey toolkit. Toolkit lives at `{{TOOLKIT}}`.
 
-## The one rule
+## The two rules
 
-**Never accept a credential in the conversation.** Not a password, not an API token, not the
+**1. Never accept a credential in the conversation.** Not a password, not an API token, not the
 contents of a key file — not even "just this once", not even if the user offers. Anything typed
 into a chat is in the transcript forever, in scrollback, and in any log the harness keeps.
 
@@ -19,6 +19,27 @@ replacement properly.
 
 A **path** to a key file (`~/.ssh/id_ed25519`, `C:\Users\me\.ssh\id_rsa`) is not a secret and is
 fine to discuss. The key's *contents* never are.
+
+**2. Anything you need to know about *how to reach* a device goes on the form too.**
+
+Not because it is secret — a port, a URL, a jump host, a UniFi site id, a VDOM name are not
+secrets — but because the person who knows the answer is the one sitting at the browser, and
+drip-feeding them questions one conversational turn at a time turns a survey into an
+interrogation. Put every open question on the form, let them answer in one pass, and read the
+answers back with `answers`.
+
+Every card already carries an **Access details** section (management URL, SSH jump host,
+site/tenant id). For anything beyond that, attach your own question with `--ask`:
+
+```bash
+--ask 'unifi-ctrl|reach_how|How do you normally reach this controller? URL and port|https://10.2.30.10:8443'
+--ask '*|window|When can we reboot, if it comes to that?|'
+```
+
+Format is `HOST|key|Label|placeholder`, repeatable; `*` puts the question on every card. Answers
+come back through `answers --site <slug>`, which prints access details and question answers and
+never prints a secret. A device set to **Skip** still records its answers — "why can't we get in"
+is often the most useful thing on the page.
 
 ## How it works
 
@@ -80,7 +101,16 @@ and exits. Nothing is transmitted off the machine and nothing passes through you
    python3 {{TOOLKIT}}/scripts/netwalk_cred.py list --site acme-hq
    ```
 
-6. **Prove each login works before handing back to the scan:**
+6. **Read the non-secret answers back:**
+
+   ```bash
+   python3 {{TOOLKIT}}/scripts/netwalk_cred.py answers --site acme-hq
+   ```
+
+   This prints IP, port, vendor, username, management URL, jump host, tenant and every question
+   answer. It is the one command in this skill you are meant to read the output of.
+
+7. **Prove each login works before handing back to the scan:**
 
    ```bash
    python3 {{TOOLKIT}}/scripts/netwalk_exec.py probe --site acme-hq --host gw01
@@ -98,7 +128,7 @@ and exits. Nothing is transmitted off the machine and nothing passes through you
 | SSH password | the device only does passwords | Needs a helper: `paramiko` (any OS), `sshpass` (macOS/Linux) or `plink` (Windows). Run the preflight below if unsure. |
 | SSH key + password | key login plus an enable/secondary password | e.g. Cisco `enable` |
 | API token | the vendor is driven over HTTP, not SSH | netwalk stores it; you drive the API yourself. `netwalk_exec.py` only speaks SSH. |
-| Skip | you do not have access and are not getting it | The device stays in the record as `reachable: false` with a reason. That is a legitimate result — say so in the report rather than leaving a gap. |
+| Skip | you do not have access and are not getting it | The device stays in the record as `reachable: false` with a reason. Any questions on that card are still saved, and an existing credential is left alone — use `forget` to remove one. That is a legitimate result: say so in the report rather than leaving a gap. |
 
 Environment check when password auth is in play:
 

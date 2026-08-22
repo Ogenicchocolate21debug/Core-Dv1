@@ -24,7 +24,10 @@ netwalk-login  →  netwalk-scan  →  netwalk-diag  →  netwalk-map  →  netw
    `scripts/netwalk_policy.py` before it is sent. Config writes, counter clears, service restarts
    and reboots are refused by the tool, not by good intentions. Config is exported, never imported.
 2. **Credentials never enter the conversation.** They are typed into a page served on the user's own
-   `127.0.0.1`, stored in a private file, and read by the exec wrapper — never by you.
+   `127.0.0.1`, stored in a private file, and read by the exec wrapper — never by you. The same page
+   carries the *access* questions: which URL, which port, which jump host, which controller site. When
+   you are blocked on how to reach something, put the question on the form with `--ask` and let the
+   user answer it there, rather than asking across several conversational turns.
 
 Both are enforced in code. Do not route around either. If a read-only command is wrongly blocked,
 add it to the allowlist, run `python3 {{TOOLKIT}}/tests/test_policy.py`, and say you did.
@@ -46,7 +49,8 @@ Pick a site slug (`acme-hq`). Everything for the engagement lands in `~/.netwalk
 
 ## Stage 1 — access (`netwalk-login`)
 
-Serve the credential form for the entry device. Never take a secret in the chat, not even offered.
+Serve the credential form for the entry device. Never take a secret in the chat, not even offered, and
+put any "how do I reach this" question on the same form with `--ask` instead of in the conversation.
 Hand the `netwalk_cred.py request` command to the user to run in their own terminal (`!` prefix in
 Claude Code) rather than running it as a background task — it waits on a human, and a reaped task
 takes the one-time URL with it. Verify with `netwalk_exec.py probe` before moving on; an unverified

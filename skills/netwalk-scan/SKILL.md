@@ -91,6 +91,12 @@ For each device, in this order:
 6. **Record dead ends honestly.** Unreachable, no CLI, credential refused, user said don't:
    `reachable: false` plus a real `unreachable_reason`, and move on.
 
+   Before writing a device off, collect the open questions and send them back through
+   `netwalk-login` in one batch — the credential form takes `--ask`, so "which port is the
+   controller on", "is there a jump host", "what is this device on ether16" are all questions the
+   user answers in the browser in one pass. Asking them one at a time in the chat is the slow way,
+   and the answers are not secrets so `answers` reads them straight back.
+
 ## Deriving topology
 
 `topology_edges` is what the diagram is drawn from, so build it deliberately rather than dumping
