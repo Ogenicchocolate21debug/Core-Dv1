@@ -1,5 +1,7 @@
 # netwalk
 
+***English** · [ภาษาไทย](README.th.md)*
+
 **A read-only network survey toolkit for Claude Code.** Point it at one device you can log into,
 and it crawls the network hop by hop, reads the health of everything it finds, draws the topology,
 and produces a report you can hand to the site owner.
@@ -308,9 +310,7 @@ netwalk/
     netwalk_logos.py             optional vendor logo fetcher
     packs/*.txt                  per-vendor read-only command lists
   schema/netwalk-record.schema.json    the contract between collection and reporting
-  tests/test_policy.py           254 allow/deny cases
-  tests/test_sweep.py            81 cases over the sweep scope gate
-  tests/test_audit.py            57 cases, every check tested vulnerable AND hardened
+  tests/                         651 cases (policy 397 · sweep 81 · audit 57 · redaction 28 · …)
   examples/example-scan.json     a complete record you can render without touching a network
   CHANGELOG.md                   what changed between versions, newest first
 ```

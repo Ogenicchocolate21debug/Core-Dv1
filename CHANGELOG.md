@@ -11,6 +11,16 @@ I last upgraded" without reading thirty commits.
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- **Thai README** (`README.th.md`), linked from the top of the English one. A full translation
+  rather than a summary — technical terms stay in English, which is how the people who will
+  actually run this read and write about networks.
+
+---
+
 ## [0.2.0] — 2026-08-23
 
 Surveys can now sweep an address range, check a configuration against vendor hardening
