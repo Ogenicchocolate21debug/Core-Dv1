@@ -36,9 +36,14 @@ FORBIDDEN_KEYS = re.compile(
 SECRET_VALUE_PATTERNS = [
     (re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"), "private key block"),
     (re.compile(r"\bssh-(rsa|ed25519|dss)\s+AAAA[0-9A-Za-z+/=]{40,}"), "ssh key blob"),
-    (re.compile(r"(?i)\bpassword\s*[:=]\s*\S+"), "an inline password= assignment"),
-    (re.compile(r"(?i)\bwpa[-_ ]?(psk|passphrase)\s*[:=]\s*\S+"), "a wireless pre-shared key"),
-    (re.compile(r"(?i)\bsnmp[- ]?community\s*[:=]?\s*\S+"), "an SNMP community string"),
+    (re.compile(r"(?i)\bpassword\s*[:=]\s*(?!<redacted>)\S+"), "an inline password= assignment"),
+    (re.compile(r"(?i)\bwpa[-_ ]?(psk|passphrase)\s*[:=]\s*(?!<redacted>)\S+"), "a wireless pre-shared key"),
+    # `trap-community: x` is a community string and the old pattern, anchored on the word
+    # "snmp", walked straight past it - a real customer report went out with one in an
+    # evidence excerpt. Match the word wherever it appears, however it is prefixed.
+    (re.compile(r"(?i)\b[\w-]*community\s*[:=]\s*(?!<redacted>)\S+"), "a community string"),
+    (re.compile(r"(?i)\b[\w-]*(secret|passphrase|pre-?shared-?key|psk)\s*[:=]\s*(?!<redacted>)\S+"),
+     "a secret-shaped value"),
     (re.compile(r"(?i)\bsecret\s+\d?\s*\$?\d?\$\S+"), "a Cisco enable secret hash"),
 ]
 

@@ -89,8 +89,54 @@ SWEEP = re.compile(
     r'[\w.\-]*\s*[:=]\s*([^\s,"\']{3,})')
 
 
+def test_report_sweep_catches_prefixed_secrets():
+    """The renderer refuses to build a report from a record holding credential material.
+
+    That guarantee failed once, in front of a customer: an evidence excerpt read
+    `trap-community: <value>` and the pattern was anchored on the word "snmp", so the
+    sweep walked past it and the report rendered. A community string is a community
+    string whatever word precedes it.
+    """
+    import netwalk_report as R
+    must_catch = [
+        "enabled: yes  trap-community: hunter2",
+        "snmp community: public",
+        "ro-community=mysecret",
+        "trap-community:secret",
+        "wpa2-pre-shared-key: abc123",
+        "enable secret 5 $1$ab$cdefgh",
+    ]
+    must_pass = [
+        "214 interface resets",
+        "community engagement is not a secret",
+        "chain=input action=drop",
+        # an excerpt the redactor has already been through must not block the render -
+        # the first fix for this bug refused every report that had ever been cleaned
+        "enabled: yes  trap-community: <redacted>",
+        "password = <redacted>",
+    ]
+    bad = []
+    for x in must_catch:
+        rec = {"findings": [{"evidence": [{"excerpt": x}]}]}
+        if not R.sweep(rec):
+            bad.append(f"MISSED  {x}")
+    for x in must_pass:
+        rec = {"findings": [{"evidence": [{"excerpt": x}]}]}
+        if R.sweep(rec):
+            bad.append(f"FALSE POSITIVE  {x}")
+    for b in bad:
+        print(f"  FAILED {b}")
+    if not bad:
+        print(f"  ok     report sweep: {len(must_catch)} secret shapes caught, "
+              f"{len(must_pass)} innocent strings passed")
+    return len(bad)
+
+
 def main() -> int:
+    _extra = test_report_sweep_catches_prefixed_secrets()
     fails = []
+    for _ in range(test_report_sweep_catches_prefixed_secrets()):
+        fails.append('report sweep missed a secret shape - see above')
 
     for desc, text, secret in MUST_HIDE:
         out, _ = E.redact_device_secrets(text)
