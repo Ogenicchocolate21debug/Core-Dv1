@@ -1034,6 +1034,29 @@ def cmd_forget(args: argparse.Namespace) -> int:
     C.shred(p)
     print(f"deleted {p} (overwritten first; on a copy-on-write or SSD filesystem that "
           f"is not a forensic wipe - rotate the credentials if that matters)")
+
+    # The credential file is the obvious thing to delete and the config exports are the
+    # dangerous one: they hold PSKs, community strings and password hashes in clear text,
+    # they are far larger, and nothing about them looks like a secret from the outside.
+    # Leaving them to a manual `rm` in the documentation means leaving them.
+    cfg = C.site_dir(args.site) / "configs"
+    files = sorted(f for f in cfg.glob("*") if f.is_file()) if cfg.is_dir() else []
+    if not files:
+        return 0
+    total = sum(f.stat().st_size for f in files)
+    if args.with_configs:
+        for f in files:
+            C.shred(f)
+        print(f"shredded {len(files)} configuration export(s) ({total:,} bytes) from {cfg}")
+        print("Findings written from them survive in the scan record; the full text does not. "
+              "Re-checking anything that needs it means asking for access again.")
+    else:
+        print(f"\n{len(files)} configuration export(s) are STILL ON DISK in {cfg} "
+              f"({total:,} bytes).")
+        print("They contain PSKs, SNMP community strings and password hashes in clear text - "
+              "more sensitive than the file just deleted, and this command does not touch "
+              "them unless asked:")
+        print(f"    netwalk_cred.py forget --site {args.site} --with-configs")
     return 0
 
 
@@ -1117,6 +1140,9 @@ def main() -> int:
     f = sub.add_parser("forget", help="delete stored credentials")
     f.add_argument("--site", required=True)
     f.add_argument("--host", action="append", default=[], help="omit to shred the whole site vault")
+    f.add_argument("--with-configs", action="store_true",
+                   help="also shred the site's configuration exports - they hold PSKs, "
+                        "community strings and password hashes, and nothing else deletes them")
     f.set_defaults(func=cmd_forget)
 
     args = ap.parse_args()

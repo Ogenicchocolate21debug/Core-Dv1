@@ -206,7 +206,10 @@ it. The renderer refuses to build a report from a record containing credential m
 - Say plainly what was **not** covered. A polished document should never imply a completeness the
   scan did not have.
 - Offer to clear the credential store:
-  `python3 <TOOLKIT>/scripts/netwalk_cred.py forget --site <slug>`
+  `python3 <TOOLKIT>/scripts/netwalk_cred.py forget --site <slug> --with-configs`
+  — **on every machine the survey ran from.** Nothing expires on its own, and `--with-configs`
+  is what removes the configuration exports, which hold PSKs and password hashes and are the
+  more dangerous of the two. Without the flag the command tells you how many are still there.
   If the credentials were sensitive, recommend rotating them — overwrite-then-delete is not a
   forensic wipe on modern storage.
 
@@ -439,6 +442,7 @@ Offer this at the end of every engagement, especially for someone else's network
 
 ```bash
 python3 <TOOLKIT>/scripts/netwalk_cred.py forget --site acme-hq            # whole site
+python3 <TOOLKIT>/scripts/netwalk_cred.py forget --site acme-hq --with-configs   # AND the config exports
 python3 <TOOLKIT>/scripts/netwalk_cred.py forget --site acme-hq --host ap-01
 ```
 
@@ -1074,8 +1078,15 @@ when `public_safe` is `true`. Set the flag correctly at the finding level in `ne
 
 Before rendering, the record is swept for anything that looks like a secret — keys named
 `password`, `token`, `secret`, `community`, `psk`, `key_path` and friends, plus values containing
-private-key blocks, `password=` assignments, SNMP communities or Cisco `secret` hashes. If anything
-matches, **the render is refused** with the exact JSON path.
+private-key blocks, `password=` assignments, community strings under any prefix, or Cisco `secret`
+hashes. If anything matches, **the render is refused** with the exact JSON path.
+
+**This guarantee has failed once, so do not treat it as the only line of defence.** The pattern for
+community strings was anchored on the word `snmp`, an evidence excerpt read `trap-community: <value>`,
+and the report rendered and was delivered with the string in it. The pattern is fixed and tested in
+both directions now, but the lesson stands: the sweep catches shapes it knows. **Read the evidence
+excerpts you write.** An excerpt exists to show the one line that proves a finding — if that line
+happens to carry a value as well as a fact, cut the value out before it reaches the record.
 
 If the user asks for the credentials so they can write up the site, that is a fair request and the
 answer is not the report: `netwalk_cred.py export` writes them a separate 0600 access document, which
@@ -1122,7 +1133,7 @@ your message rather than assuming they read that box:
 
 - `~/.netwalk/creds/<slug>.json` — the credentials they typed into the login form, plain JSON,
   file-permission protected and **not encrypted**. It survives the engagement until someone runs
-  `netwalk_cred.py forget --site <slug>`, on **every machine the survey ran from** — a survey driven
+  `netwalk_cred.py forget --site <slug> --with-configs`, on **every machine the survey ran from** — a survey driven
   from two boxes leaves two copies.
 - `~/.netwalk/sites/<slug>/configs/` — full config exports, containing PSKs, SNMP communities and
   password hashes in clear text.

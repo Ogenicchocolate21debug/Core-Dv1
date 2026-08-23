@@ -19,7 +19,7 @@ Works on **Windows, macOS and Linux**.
 
 ---
 
-## Two promises, both enforced in code
+## Three promises, all enforced in code
 
 **1. It never changes anything.** Every command is checked against a per-vendor read-only allowlist
 before it is sent. Config writes, `clear counters`, `dmesg -C`, `systemctl restart`, `reload`,
@@ -38,17 +38,59 @@ DENY  [cisco] pipes output into a file (matched /\|\s*(redirect|tee|append)\b/)
 ```
 
 The allowlist lives in `scripts/netwalk_policy.py` and is covered by `tests/test_policy.py`
-(254 cases). If you widen it, run the tests.
-
-The same idea guards the address sweep: a range can only be swept once it has been authorised for
-that site by name, the check is `tests/test_sweep.py` (81 cases), and there is no override flag.
+(397 cases, including every command in every shipped pack). If you widen it, run the tests.
 
 **2. Credentials never touch the conversation.** `/netwalk-login` serves a one-shot page on your own
-`127.0.0.1` — random port, random URL token, JSON-only POST, cross-origin requests rejected. You
-type the password into your browser; it is written straight to a private file on your disk
-(`0600` on POSIX, an owner-only ACL via `icacls` on Windows) and the listener exits. The assistant
-is told the *path*, never the value, and the report renderer refuses to build a document from a
-record containing credential material.
+machine. You type the password into your browser; it is written straight to a private file on your
+disk (`0600` on POSIX, an owner-only ACL via `icacls` on Windows) and the listener exits. The
+assistant is told the *path*, never the value, and the report renderer refuses to build a document
+from a record containing credential material.
+
+**The form is not reachable from anywhere else on the network.** The listener binds to
+`127.0.0.1` — the loopback interface — not to `0.0.0.0`, so the kernel never accepts a packet for
+it from another host. A colleague on the same LAN, a guest on the Wi-Fi, or a device on the network
+being surveyed cannot open the page even if they know the port:
+
+```
+$ netwalk_cred.py serve --site acme-hq ...
+   http://127.0.0.1:62742/Mnoc4Wmy1w80_h6RBlJgXXMPBs7VLkCk
+
+$ lsof -nP -iTCP:62742 -sTCP:LISTEN          # on the machine serving it
+   Python  98900  TCP 127.0.0.1:62742 (LISTEN)      <- not *:62742
+
+$ curl http://192.168.60.12:62742/            # from any other host
+   (connection refused)
+```
+
+Four further things stand between the page and anyone who is not you:
+
+| | |
+|---|---|
+| **random port** | chosen per run, never fixed |
+| **random URL token** | the path (`/Mnoc4Wmy...`) must be known; without it the server answers nothing |
+| **cross-origin POSTs rejected** | a page open in your browser from anywhere else cannot post to it — this is the attack that loopback binding alone does not stop |
+| **JSON only, one shot** | `request` mode exits after the submit it was waiting for |
+
+What this does **not** protect against, stated plainly: another process running as *you*, on your
+own machine, can reach loopback. That is the same trust boundary as the `0600` credential file
+itself. If your account is compromised, the form is not what saves you.
+
+**3. It never sweeps a range nobody authorised.** netwalk crawls outward from a device you name, and
+it will also sweep an address range — but only one written into the site's scope with the name of
+the person who authorised it, which then appears in the report. The check is in code, and there is
+no override flag:
+
+```
+$ netwalk_sweep.py hosts --site acme-hq --range 198.51.100.0/24
+DENY  198.51.100.0/24 is outside the authorised scope for this site
+      (authorised: 192.0.2.0/24). Ask the owner and authorise it - there is no override flag
+```
+
+A range outside the scope is refused. So is a *supernet* of an authorised range — authorising a /24
+does not authorise the /23 that contains it. So is public address space without a second explicit
+flag, because owning one address in a hosting provider's /24 does not make the other 253 yours to
+probe. So is anything larger than a /16, and so is a projected probe count over the cap. Covered by
+`tests/test_sweep.py` (81 cases), and the ones that matter are the refusals.
 
 ---
 
@@ -204,6 +246,50 @@ unsupported.
 
 ---
 
+## What it checks, security-wise
+
+Two different things, and they are worth keeping apart.
+
+**Hardening — is the configuration against the vendor's own advice?** `netwalk_audit.py` holds the
+checklist as data, so the same checks run on every site instead of depending on anyone remembering
+them. 38 checks: MikroTik and Cisco and Linux properly, Aruba, HP, Fortinet and Windows with a
+starter set that the docs do not dress up as more than it is.
+
+```bash
+netwalk_audit.py guide --vendor mikrotik              # the checklist itself, as a document
+netwalk_audit.py run --site acme-hq --record scan.json [--dry-run]
+```
+
+Each check carries the evidence that decides it, why it matters, a fix a technician can apply, and
+the vendor guidance it came from. A firewall input chain with no catch-all drop, telnet or a
+clear-text API left enabled, default SNMP communities, RoMON and MAC-server open to the whole
+broadcast domain, root SSH login, no BPDU guard, an open or WEP SSID, a database listening on a
+user VLAN.
+
+Three properties matter more than the check count:
+
+- **It reads the configuration off the disk, not through the conversation.** The exports are already
+  there because `netwalk_exec.py --out` put them there. The full text never enters an agent's
+  context; the excerpt attached to a finding is one line and goes through the redactor first.
+- **`NOT CHECKED` is part of the output.** A device with no export, a check whose command is missing
+  from the pack, and every item that needs a human walking the building are listed by name and
+  written into `coverage.not_covered`. Six findings with ten silent skips reads as a clean bill of
+  health, which is worse than no security section at all.
+- **A check that reads one setting says so.** `mt-dns-remote` fires on `allow-remote-requests=yes`,
+  which says the resolver will answer, not that anything can reach it — so it is reported as
+  *suspected*, with instructions to read the raw firewall before repeating it to a customer. At a
+  real site the raw table already dropped UDP/53 and a pattern match would have overruled a
+  verified conclusion.
+
+**Exposure — what is actually listening?** The crawl finds what announces itself. An authorised
+sweep finds the rest, and the two together are what makes an "unidentified device" finding possible
+at all. See **Scope first** above for the gate; a refused connection counts as a host found, the
+sweep is blind to UDP, and both facts are written into the report rather than left implied.
+
+Findings from either default to `public_safe: false`. A hardening list is a route map.
+
+---
+
 ## Layout
 
 ```
@@ -224,7 +310,7 @@ netwalk/
   schema/netwalk-record.schema.json    the contract between collection and reporting
   tests/test_policy.py           254 allow/deny cases
   tests/test_sweep.py            81 cases over the sweep scope gate
-  tests/test_audit.py            49 cases, every check tested vulnerable AND hardened
+  tests/test_audit.py            57 cases, every check tested vulnerable AND hardened
   examples/example-scan.json     a complete record you can render without touching a network
 ```
 
@@ -267,8 +353,39 @@ netwalk_cred.py probe  --site acme-hq     # via netwalk_exec.py: does the login 
 netwalk_cred.py forget --site acme-hq     # overwrite and delete
 ```
 
-`forget` overwrites before deleting, which is **not** a forensic wipe on an SSD or a copy-on-write
-filesystem. If the credentials were sensitive, rotate them.
+---
+
+## Closing a survey out
+
+A survey leaves more behind than the report, and the report is the only part anyone remembers. When
+the job is done:
+
+```bash
+netwalk_cred.py stop   --site acme-hq                  # 1. stop the credential form
+netwalk_cred.py forget --site acme-hq --with-configs   # 2. shred credentials AND config exports
+```
+
+**Nothing expires on its own.** There is no TTL on the credential store, nothing deletes it at the
+end of a scan, and a survey driven from two machines leaves two copies — run the same command on
+each. `forget` without `--with-configs` tells you how many exports are still on disk and how large
+they are, rather than letting them sit there unmentioned.
+
+What is left behind, and how bad each one is:
+
+| | Where | Contains |
+|---|---|---|
+| **Credential store** | `~/.netwalk/creds/<site>.json` | the passwords and key paths you were given. Plain JSON, protected by file permissions, **not encrypted** |
+| **Configuration exports** | `~/.netwalk/sites/<site>/configs/` | PSKs, SNMP community strings and password hashes in clear text. **Larger and more sensitive than the credential file**, and nothing else deletes them |
+| Scan record, map, reports | `~/.netwalk/sites/<site>/` | the deliverable. No secrets — the renderer refuses to build a report from a record that has any |
+
+The full report also prints a *Where this survey left sensitive files* box naming these paths, so
+the person you hand it to learns what exists on your machine rather than finding out later. That box
+is in the full copy only; a customer reading the `--public` copy has no business learning where the
+engineer keeps their passwords.
+
+**Deleting is not rotating.** `forget` overwrites before unlinking, which is **not** a forensic wipe
+on an SSD or a copy-on-write filesystem. If any of those credentials matter, rotate them — and say
+so to the site owner rather than assuming the delete was enough.
 
 ---
 

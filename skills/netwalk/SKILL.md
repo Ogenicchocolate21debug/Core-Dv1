@@ -143,7 +143,10 @@ it. The renderer refuses to build a report from a record containing credential m
 - Say plainly what was **not** covered. A polished document should never imply a completeness the
   scan did not have.
 - Offer to clear the credential store:
-  `python3 {{TOOLKIT}}/scripts/netwalk_cred.py forget --site <slug>`
+  `python3 {{TOOLKIT}}/scripts/netwalk_cred.py forget --site <slug> --with-configs`
+  — **on every machine the survey ran from.** Nothing expires on its own, and `--with-configs`
+  is what removes the configuration exports, which hold PSKs and password hashes and are the
+  more dangerous of the two. Without the flag the command tells you how many are still there.
   If the credentials were sensitive, recommend rotating them — overwrite-then-delete is not a
   forensic wipe on modern storage.
 

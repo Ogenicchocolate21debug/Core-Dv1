@@ -205,6 +205,7 @@ Offer this at the end of every engagement, especially for someone else's network
 
 ```bash
 python3 {{TOOLKIT}}/scripts/netwalk_cred.py forget --site acme-hq            # whole site
+python3 {{TOOLKIT}}/scripts/netwalk_cred.py forget --site acme-hq --with-configs   # AND the config exports
 python3 {{TOOLKIT}}/scripts/netwalk_cred.py forget --site acme-hq --host ap-01
 ```
 
