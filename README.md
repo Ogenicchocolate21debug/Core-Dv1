@@ -312,6 +312,7 @@ netwalk/
   tests/test_sweep.py            81 cases over the sweep scope gate
   tests/test_audit.py            57 cases, every check tested vulnerable AND hardened
   examples/example-scan.json     a complete record you can render without touching a network
+  CHANGELOG.md                   what changed between versions, newest first
 ```
 
 Try it without a network:
@@ -403,6 +404,17 @@ so to the site owner rather than assuming the delete was enough.
 - Vendor brand marks are not distributed with this repository. `netwalk_logos.py fetch` pulls them
   from [Simple Icons](https://simpleicons.org) (CC0-1.0) on request; a vendor with no logo renders
   as a lettered chip. All trademarks belong to their owners.
+
+## Version history
+
+`CHANGELOG.md` summarises each release; the commit history is the detailed record, and every
+commit message explains why a change was made rather than restating the diff. On GitHub, the
+**Blame** view on any file jumps straight from a line to the commit that explains it.
+
+```bash
+git log --oneline v0.1.0..v0.2.0      # what changed between releases
+git log -p --follow scripts/netwalk_policy.py    # one file's whole history
+```
 
 ## Legal
 
