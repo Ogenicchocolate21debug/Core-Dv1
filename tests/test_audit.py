@@ -309,12 +309,16 @@ def test_record_checks():
                                "in_record": True}]}],
     }
     findings, _ = A.run_checks("rc", rec)
-    ids = [f["id"] for f in findings]
+    ids = [f["id"].split("@")[0] for f in findings]
+    check(len(set(f["id"] for f in findings)) == len(findings),
+          "every finding id is unique - a shared id is silently dropped when the record "
+          "is written, which loses findings without saying so")
     titles = " | ".join(f["title"] for f in findings)
 
     check("rec-mgmt-on-wan" in ids, "management on a WAN address is critical",
           str(sorted(set(ids))))
-    check(next(f["severity"] for f in findings if f["id"] == "rec-mgmt-on-wan") == "critical",
+    check(next(f["severity"] for f in findings
+                    if f["id"].startswith("rec-mgmt-on-wan")) == "critical",
           "and it is rated critical")
     check("'Open' uses open security" in titles, "an open SSID is caught")
     check("'Old' uses wep security" in titles, "a WEP SSID is caught")
@@ -328,6 +332,29 @@ def test_record_checks():
           "in a copy handed to a third party")
     check(all(f.get("evidence") for f in findings), "every finding carries evidence")
     check(all(f.get("recommendation") for f in findings), "every finding carries a fix")
+
+
+def test_one_finding_per_host_across_sweeps():
+    print("\nsweeps - a host in two sweeps is one finding, not two")
+    rec = {"site": {"id": "ms"}, "scanned_at": "t", "devices": [],
+           "sweeps": [
+               {"range": "10.0.0.0/24", "method": "tcp-connect", "authorized_by": "o",
+                "hosts": [{"ip": "10.0.0.7", "open_ports": [23, 445],
+                           "services": ["telnet", "smb"], "in_record": False}]},
+               {"range": "10.0.0.7", "method": "tcp-connect", "authorized_by": "o",
+                "hosts": [{"ip": "10.0.0.7", "open_ports": [23, 445, 5900, 111],
+                           "services": ["telnet", "smb", "vnc", "rpcbind"],
+                           "in_record": False}]}]}
+    findings, _ = A.run_checks("ms", rec)
+    risky = [f for f in findings if f["id"].startswith("rec-risky-open-port")]
+    check(len(risky) == 1, "one host across two sweeps produces one finding", str(len(risky)))
+    if risky:
+        detail = risky[0]["detail"]
+        for port in ("23/tcp", "445/tcp", "5900/tcp", "111/tcp"):
+            check(port in detail, f"the merged finding lists {port}")
+        check(risky[0]["id"].endswith("10.0.0.7"), "the id names the address it is about")
+        check("10.0.0.0/24" in detail and "10.0.0.7" in detail,
+              "the evidence names both ranges that found it")
 
 
 def test_not_checked_is_reported():
@@ -428,6 +455,7 @@ def main() -> int:
     test_linux()
     test_vendor_isolation()
     test_record_checks()
+    test_one_finding_per_host_across_sweeps()
     test_not_checked_is_reported()
     test_catalogue_shape()
     test_excerpt_is_redacted()

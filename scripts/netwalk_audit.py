@@ -181,10 +181,16 @@ CHECKS: list[dict] = [
     },
     {
         "id": "mt-dns-remote", "vendors": ["mikrotik"], "severity": "high",
+        "confidence": "suspected",
         "title": "The router answers DNS queries from anywhere",
         "why": "allow-remote-requests=yes with no input firewall makes the router an open "
                "resolver: usable for DNS amplification attacks against third parties, which "
-               "is how a small site ends up on a blocklist.",
+               "is how a small site ends up on a blocklist. This setting alone does not "
+               "prove exposure: it says the resolver will answer, not that anything can "
+               "reach it. CHECK /ip firewall raw AND filter for a drop of port 53 from the "
+               "WAN before reporting this, and downgrade or drop the finding if one exists - "
+               "at a real site the raw table already dropped UDP/53 and only TCP/53 was "
+               "reachable, which is a different, smaller finding.",
         "fix": "Keep allow-remote-requests=yes only if the LAN uses the router for DNS, and "
                "make sure the input chain drops UDP/TCP 53 from the WAN.",
         "kind": "config_present", "cmd": "/ip dns print",
@@ -465,13 +471,22 @@ RISKY_PORTS = {
 }
 
 
+def _sortable_ip(a: str):
+    import ipaddress as _ip  # noqa: PLC0415
+    try:
+        x = _ip.ip_address(a)
+        return (0, x.version, x.packed)
+    except ValueError:
+        return (1, 0, a.encode())
+
+
 def rc_mgmt_on_wan(rec: dict) -> list[dict]:
     out = []
     for d in rec.get("devices") or []:
         wan = (d.get("mgmt_exposure") or {}).get("reachable_from_wan") or []
         if wan:
             out.append(_finding(
-                "rec-mgmt-on-wan", "critical", "security", d.get("host_id"),
+                f"rec-mgmt-on-wan@{d.get('host_id')}", "critical", "security", d.get("host_id"),
                 "Management services answer on a public address",
                 f"{', '.join(wan)} answered on a WAN-facing address of this device. Anything "
                 f"reachable from the internet is under continuous automated attack; a "
@@ -493,7 +508,8 @@ def rc_weak_wifi(rec: dict) -> list[dict]:
             if sec in WEAK_WIFI:
                 sev = "critical" if sec in ("open", "wep") else "medium"
                 out.append(_finding(
-                    "rec-weak-wifi", sev, "security", d.get("host_id"),
+                    f"rec-weak-wifi@{d.get('host_id')}:{w.get('ssid')}", sev, "security",
+                    d.get("host_id"),
                     f"SSID '{w.get('ssid')}' uses {sec} security",
                     {"open": "An open SSID puts every client's traffic in the air unencrypted "
                              "and gives anyone in range a place on the network.",
@@ -511,7 +527,8 @@ def rc_weak_wifi(rec: dict) -> list[dict]:
                     refs={"vendor": "Wi-Fi Alliance / vendor WLAN hardening guidance"}))
             if w.get("guest") and w.get("client_isolation") is False:
                 out.append(_finding(
-                    "rec-guest-no-isolation", "medium", "security", d.get("host_id"),
+                    f"rec-guest-no-isolation@{d.get('host_id')}:{w.get('ssid')}", "medium",
+                    "security", d.get("host_id"),
                     f"Guest SSID '{w.get('ssid')}' has no client isolation",
                     "Guests can reach each other directly. One compromised laptop in the "
                     "waiting room can attack every other guest device on the same SSID.",
@@ -524,17 +541,35 @@ def rc_weak_wifi(rec: dict) -> list[dict]:
 
 
 def rc_risky_open_ports(rec: dict) -> list[dict]:
-    """Findings straight out of the authorised sweep - what is listening, and why it matters."""
-    out = []
+    """Findings straight out of the authorised sweep - what is listening, and why it matters.
+
+    A host normally appears in more than one sweep: the host sweep probes a handful of
+    ports to decide it is alive, and a port scan afterwards looks properly. Emitting one
+    finding per sweep put the same address in a customer report twice, at two severities,
+    each listing a different subset of the same problem. Ports are merged per address, and
+    the ranges that produced them are named in the evidence.
+    """
+    merged: dict[str, dict] = {}
     for s in rec.get("sweeps") or []:
         for h in s.get("hosts") or []:
-            risky = [(p, RISKY_PORTS[p]) for p in (h.get("open_ports") or []) if p in RISKY_PORTS]
-            if not risky:
-                continue
-            worst = "high" if any(sev == "high" for _, (_, sev) in risky) else "medium"
-            listed = ", ".join(f"{p}/tcp {name}" for p, (name, _) in risky)
+            e = merged.setdefault(h["ip"], {"ports": set(), "ranges": []})
+            e["ports"].update(h.get("open_ports") or [])
+            if s.get("range") and s["range"] not in e["ranges"]:
+                e["ranges"].append(s["range"])
+
+    out = []
+    for ip in sorted(merged, key=lambda a: _sortable_ip(a)):
+        e = merged[ip]
+        risky = [(p, RISKY_PORTS[p]) for p in sorted(e["ports"]) if p in RISKY_PORTS]
+        if not risky:
+            continue
+        worst = "high" if any(sev == "high" for _, (_, sev) in risky) else "medium"
+        listed = ", ".join(f"{p}/tcp {name}" for p, (name, _) in risky)
+        s = {"range": ", ".join(e["ranges"])}
+        h = {"ip": ip}
+        if True:
             out.append(_finding(
-                "rec-risky-open-port", worst, "security", None,
+                f"rec-risky-open-port@{ip}", worst, "security", None,
                 f"{h['ip']} is listening on {len(risky)} service(s) that should not be open "
                 f"on a general network",
                 f"The authorised sweep of {s.get('range')} found {listed} answering on "
@@ -698,7 +733,8 @@ def run_checks(site: str, rec: dict) -> tuple[list[dict], list[str]]:
             findings.append(_finding(
                 f"{c['id']}@{host}", c["severity"], c.get("category", "security"), host,
                 c["title"], c["why"], ev, c["fix"],
-                "confirmed" if c["kind"] == "config_present" else "suspected",
+                c.get("confidence") or
+                ("confirmed" if c["kind"] == "config_present" else "suspected"),
                 public_safe=False,
                 refs={"vendor": VENDOR_GUIDE.get(vendor, VENDOR_GUIDE["*"])}))
 
