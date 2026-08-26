@@ -1,6 +1,7 @@
 {
   "name": "GOD MODE",
   "slug": "god-mode",
+  "version": "1.1.0",
   "type": "outbound-only",
   "modes": ["cloud", "local", "hybrid"],
   "source": {
@@ -30,6 +31,19 @@
     "CONNECTOR_REQUIRED",
     "LOCAL_BRIDGE_REQUIRED",
     "EXECUTION_SURFACE_REQUIRED",
-    "CONFIGURATION_REQUIRED"
-  ]
+    "CONFIGURATION_REQUIRED",
+    "REVERSIBLE_ALTERNATIVE_REQUIRED"
+  ],
+  "efficiency": {
+    "default_max_final_words": 120,
+    "reuse_unchanged_state": true,
+    "batch_independent_calls": true,
+    "stop_after_verification": true
+  },
+  "persistence": {
+    "hard_delete": false,
+    "force_push": false,
+    "rewrite_history": false,
+    "default_strategy": "append-or-version"
+  }
 }
