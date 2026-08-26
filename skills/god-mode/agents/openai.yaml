@@ -1,8 +1,14 @@
 interface:
-  display_name: "GOD MODE"
-  short_description: "Hybrid outbound toolkit for cloud and local work"
-  icon_small: "./assets/god-mode-48.png"
-  icon_large: "./assets/god-mode-256.png"
-  default_prompt: "Use $god-mode to inspect, build, test, or operate this project through the best available cloud or local tools."
+  display_name: GOD MODE
+  short_description: Hybrid outbound toolkit for cloud and local work
+  icon_small: assets/icon.svg
+  icon_large: assets/icon.svg
+  default_prompt: Use $god-mode to operate through the best available cloud or local
+    tools, return a concise verified result, and never hard-delete data or rewrite history.
 policy:
   allow_implicit_invocation: true
+  products:
+  - chatgpt
+  - codex
+  - api
+  - atlas
