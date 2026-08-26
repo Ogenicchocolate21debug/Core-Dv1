@@ -32,6 +32,16 @@
 - `LOCAL_BRIDGE_REQUIRED`: the operation needs the user's computer.
 - `EXECUTION_SURFACE_REQUIRED`: code can be prepared but cannot currently run.
 - `CONFIGURATION_REQUIRED`: a non-secret identifier, scope, or target is missing.
+- `REVERSIBLE_ALTERNATIVE_REQUIRED`: the requested outcome appears to require permanent deletion; propose an archive, disable, move, or versioned replacement instead.
+
+## Efficiency and persistence boundary
+
+- Read the minimum required scope and reuse unchanged state.
+- Batch independent calls, summarize large outputs, and stop after verification.
+- Keep normal final answers under 120 words unless detail is requested.
+- Prefer append-only or versioned changes.
+- Allow `- old` / `+ new` in a Git diff only when the old version remains recoverable in history.
+- Never hard-delete, force-push, rewrite history, or run destructive reset/clean operations.
 
 ## Outbound-only boundary
 
