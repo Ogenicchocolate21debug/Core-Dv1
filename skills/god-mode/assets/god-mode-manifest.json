@@ -1,0 +1,35 @@
+{
+  "name": "GOD MODE",
+  "slug": "god-mode",
+  "type": "outbound-only",
+  "modes": ["cloud", "local", "hybrid"],
+  "source": {
+    "repository": "https://github.com/Ogenicchocolate21debug/Core-Dv1",
+    "chat_spec_date": "2026-08-27",
+    "logo_source": "IMG_0172.jpeg"
+  },
+  "tool_families": [
+    "workspace_*",
+    "read_file/search_text/apply_patch",
+    "git_status/git_diff/git_log",
+    "project_dev/test/lint/typecheck/build",
+    "process_*/shell/codex_run",
+    "dom_cdp/accessibility/input_event",
+    "vision/window",
+    "office/clipboard/file_dialog",
+    "screen_record/audio",
+    "notification/scheduler",
+    "web_fetch",
+    "system_info/health"
+  ],
+  "invocation": ["Use $god-mode ...", "@GOD MODE ..."],
+  "availability_status": [
+    "READY_CLOUD",
+    "READY_LOCAL",
+    "READY_HYBRID",
+    "CONNECTOR_REQUIRED",
+    "LOCAL_BRIDGE_REQUIRED",
+    "EXECUTION_SURFACE_REQUIRED",
+    "CONFIGURATION_REQUIRED"
+  ]
+}
