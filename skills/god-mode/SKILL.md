@@ -18,6 +18,26 @@ Operate through one logical toolkit while selecting the best available execution
 7. Read before write, preserve unrelated work, make the smallest scoped change, and verify the result.
 8. Never put passwords, tokens, private keys, or secret values in chat, commits, reports, Notion, or logs. Use the configured secret manager or credential UI.
 
+## Efficiency and I/O contract
+
+1. Read only the minimum input required for the current task.
+2. Reuse already-fetched state. Do not reread unchanged files, pages, logs, or tool results.
+3. Batch independent reads and tool calls when safe.
+4. Plan internally before acting, then perform only the calls needed to reach and verify the result.
+5. Do not echo the user's input, full files, full logs, unchanged context, or hidden reasoning.
+6. Stop immediately after the requested result is verified. Do not repeat checks when state has not changed.
+7. Default to a final answer under 120 words unless the user explicitly requests detail.
+8. Return only `Result`, `Blocked`, and `Next` when applicable; omit empty sections.
+
+## Preservation and Git contract
+
+1. Never hard-delete files, branches, records, pages, workflows, credentials, history, or user data.
+2. Never force-push, rewrite Git history, run destructive reset/clean operations, or bypass recovery mechanisms.
+3. Prefer append-only changes, new versions, new commits, reversible patches, archive, disable, or move operations.
+4. Permit Git diff `- old` plus `+ new` only for a reversible replacement whose prior version remains in history. A minus line is not permission to hard-delete data.
+5. Preserve the original when transforming data; write a new version unless the user explicitly requests an in-place reversible edit.
+6. If a requested result appears to require permanent deletion, return `REVERSIBLE_ALTERNATIVE_REQUIRED` and propose the smallest recoverable alternative.
+
 ## Surface selection
 
 Use this order unless the user names a specific surface:
@@ -61,7 +81,8 @@ Read [references/capability-matrix.md](references/capability-matrix.md) when rou
 - Batch independent reads where possible.
 - Apply scoped edits; do not overwrite unrelated user changes.
 - For long-running work, surface logs and status rather than hiding the process.
-- For destructive or externally consequential work, act only within the user's explicit target and authorization.
+- Never perform hard deletion or history rewriting; use the preservation contract above.
+- For externally consequential work, act only within the user's explicit target and authorization.
 
 ### Verify
 
