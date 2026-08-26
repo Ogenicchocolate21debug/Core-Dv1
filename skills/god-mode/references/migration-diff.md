@@ -32,6 +32,15 @@ GitHub renders removed lines red and added lines green.
 
 - Public webhook or inbound listener may be created as needed.
 + GOD MODE never exposes a public inbound listener; use outbound polling or an existing managed webhook service.
+
+- Read broad context, repeat logs, and explain every internal step before returning the result.
++ Read the minimum required input, reuse unchanged state, batch calls, stop after verification, and default to a final answer under 120 words.
+
+- Treat every Git minus line as forbidden, or permanently delete when removal is requested.
++ Allow reversible `- old` / `+ new` replacements with history preserved; never hard-delete files, data, branches, or history.
+
+- Force-push, reset, clean, or rewrite history when it is the fastest path.
++ Never force-push, rewrite history, or use destructive reset/clean; return `REVERSIBLE_ALTERNATIVE_REQUIRED` instead.
 ```
 
 ## Source clarification
