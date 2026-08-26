@@ -22,6 +22,8 @@
 3. Prefer connected cloud tools for mobile use.
 4. Require the local bridge for native OS/hardware/private-network control.
 5. Report missing capability instead of pretending that an operation completed.
+6. Minimize repeated input, tool output, and final response length.
+7. Preserve data through append-only or versioned changes and never hard-delete or rewrite history.
 
 ## Non-capabilities
 
