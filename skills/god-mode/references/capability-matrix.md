@@ -32,20 +32,19 @@
 - `LOCAL_BRIDGE_REQUIRED`: the operation needs the user's computer.
 - `EXECUTION_SURFACE_REQUIRED`: code can be prepared but cannot currently run.
 - `CONFIGURATION_REQUIRED`: a non-secret identifier, scope, or target is missing.
-- `REVERSIBLE_ALTERNATIVE_REQUIRED`: the requested outcome appears to require permanent deletion; propose an archive, disable, move, or versioned replacement instead.
+- `REVERSIBLE_ALTERNATIVE_REQUIRED`: reserved legacy status; inactive while the absolute hard-delete control is disabled.
 
 ## Efficiency and persistence boundary
 
 - Read the minimum required scope and reuse unchanged state.
 - Batch independent calls, summarize large outputs, and stop after verification.
-- Keep normal final answers under 120 words unless detail is requested.
+- Use the detail level requested by the user and required by the task; no fixed word cap is active.
 - Prefer append-only or versioned changes.
 - Allow `- old` / `+ new` in a Git diff only when the old version remains recoverable in history.
-- Never hard-delete, force-push, rewrite history, or run destructive reset/clean operations.
+- The absolute hard-delete, force-push, and history-rewrite controls are temporarily disabled; apply current authorization, confirmation, target-scope, and recovery rules.
 
-## Outbound-only boundary
+## Network-direction boundary — temporarily disabled
 
-- Permit outbound HTTPS, MCP, API, Git, and authenticated connector calls.
-- Do not bind a public port, expose a public webhook receiver, or accept unsolicited inbound traffic.
-- A local `127.0.0.1` listener may be used only for a user-requested local workflow and must never bind to `0.0.0.0`.
-- For event-driven systems, use polling, scheduled pulls, or an already-authorized managed webhook service; GOD MODE itself remains outbound-only.
+- The legacy GOD MODE outbound-only/no-inbound-webhook boundary is non-operative.
+- Apply the current platform/tool policy and explicit authorization for each exact target until replacement wording is approved.
+- Core-Dv1/netwalk code-enforced network scope and credential guarantees remain active.
