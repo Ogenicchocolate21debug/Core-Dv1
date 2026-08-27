@@ -2,9 +2,9 @@
 
 GitHub renders removed lines red and added lines green.
 
-## Temporary control freeze — active now
+## Temporary control freeze — historical, superseded by v1.2
 
-The following five legacy controls are disabled. These red/minus lines are non-operative and must not be enforced as GOD MODE policy.
+The following temporary disabled markers are historical and no longer define active behavior.
 
 ```diff
 - RED_TEXT — DISABLED / ห้ามทำงาน: outbound-only and no-inbound-webhook control
@@ -14,15 +14,19 @@ The following five legacy controls are disabled. These red/minus lines are non-o
 - RED_TEXT — DISABLED / ห้ามทำงาน: absolute force-push and history-rewrite ban
 ```
 
-## Proposed replacements — not active, owner approval required
+## Owner-approved replacements — active in v1.2
 
 ```diff
-+ PROPOSED: Permit inbound webhooks only for an owner-approved target with HTTPS, authentication/signature validation, replay protection, rate limiting, audit logs, and a documented disable switch.
-+ PROPOSED: Permit exact-target deletion after dependency preview and explicit confirmation; create a recoverable export/version when appropriate, but revoke and remove expired credentials instead of archiving secret values.
-+ PROPOSED: Permit secret names, IDs, scopes, and paste-location placeholders in documentation; send actual values only through an approved credential UI or secret manager, with rotation and revocation supported.
-+ PROPOSED: Use adaptive response length—concise by default, but detailed for mobile step-by-step work, audits, troubleshooting, and explicit detail requests; no fixed word count.
-+ PROPOSED: Protect the default branch; allow scoped history cleanup only with explicit owner approval, a verified backup reference, clean-target checks, secret rotation/revocation first, and post-operation verification.
++ ACTIVE: AUTO-select outbound, managed inbound webhook, or hybrid routing. Inbound requires HTTPS, authentication/signature validation, replay protection, rate limiting, audit logs, and a disable switch.
++ ACTIVE: Permit exact-target deletion after dependency preview and the applicable confirmation; create a recoverable export/version when appropriate, but revoke and remove expired credentials instead of archiving secret values.
++ ACTIVE: Permit secret names, IDs, scopes, and paste-location placeholders in documentation; send actual values only through an approved credential UI or secret manager, with rotation and revocation supported.
++ ACTIVE: Return short, direct, essential answers. In Sol High–Max, enable limit-saving behavior by reusing state, batching calls, avoiding repeated context/logs/checks, and stopping after verification.
++ ACTIVE: Protect the default branch; allow scoped history cleanup only with explicit owner approval, a verified backup reference, clean-target checks, secret rotation/revocation first, and post-operation verification.
 ```
+
+## v1.1 migration history — reference only
+
+The diff below records the earlier v1.1 wording and does not override the active v1.2 controls above.
 
 ```diff
 - Tools Type Outbound-Only, but computer-only tools are presented as if every chat can run them directly.
