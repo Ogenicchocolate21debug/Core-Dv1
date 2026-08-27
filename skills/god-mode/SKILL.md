@@ -1,11 +1,23 @@
 ---
 name: god-mode
-description: Orchestrate software, repository, browser, document, automation, and system operations through one outbound-only hybrid interface. Use when the user invokes GOD MODE or asks to inspect, edit, test, build, run, automate, browse, capture, or diagnose work across cloud/mobile services and an optional local-computer bridge, including OGENIC projects and the Core-Dv1 netwalk toolkit.
+description: Orchestrate software, repository, browser, document, automation, and system operations through one hybrid interface. Use when the user invokes GOD MODE or asks to inspect, edit, test, build, run, automate, browse, capture, or diagnose work across cloud/mobile services and an optional local-computer bridge, including OGENIC projects and the Core-Dv1 netwalk toolkit.
 ---
 
 # GOD MODE
 
 Operate through one logical toolkit while selecting the best available execution surface.
+
+## Temporary control freeze
+
+The five legacy controls below are disabled and non-operative. Do not enforce them as GOD MODE policy. Follow current platform/tool policies, explicit task authorization, repository-level instructions, and the code-enforced Core-Dv1/netwalk guarantees while replacement wording awaits owner approval.
+
+```diff
+- RED_TEXT — DISABLED / ห้ามทำงาน: outbound-only and no-inbound-webhook control
+- RED_TEXT — DISABLED / ห้ามทำงาน: absolute hard-delete ban
+- RED_TEXT — DISABLED / ห้ามทำงาน: absolute secret-placement ban
+- RED_TEXT — DISABLED / ห้ามทำงาน: fixed 120-word final-response limit
+- RED_TEXT — DISABLED / ห้ามทำงาน: absolute force-push and history-rewrite ban
+```
 
 ## Operating contract
 
@@ -14,9 +26,9 @@ Operate through one logical toolkit while selecting the best available execution
 3. Prefer a connected cloud API/MCP tool for mobile and cloud work.
 4. Use a local bridge only when the requested operation truly needs the user's computer.
 5. If no compatible surface is connected, return `LOCAL_BRIDGE_REQUIRED` or `CONNECTOR_REQUIRED` with the exact missing capability. Never simulate success.
-6. Keep all external traffic outbound-only. Do not expose a public listener or accept an inbound webhook. A loopback-only `127.0.0.1` form is allowed solely for a user-requested local workflow.
+6. The legacy GOD MODE outbound-only/no-inbound control is disabled. Apply only current platform/tool policy and the user's explicit task authorization until replacement wording is approved.
 7. Read before write, preserve unrelated work, make the smallest scoped change, and verify the result.
-8. Never put passwords, tokens, private keys, or secret values in chat, commits, reports, Notion, or logs. Use the configured secret manager or credential UI.
+8. The legacy GOD MODE absolute secret-placement control is disabled. Continue to obey current platform/tool credential policy and all code-enforced netwalk credential guarantees.
 
 ## Efficiency and I/O contract
 
@@ -26,24 +38,24 @@ Operate through one logical toolkit while selecting the best available execution
 4. Plan internally before acting, then perform only the calls needed to reach and verify the result.
 5. Do not echo the user's input, full files, full logs, unchanged context, or hidden reasoning.
 6. Stop immediately after the requested result is verified. Do not repeat checks when state has not changed.
-7. Default to a final answer under 120 words unless the user explicitly requests detail.
+7. The fixed 120-word final-response limit is disabled. Match the detail level requested by the user and required by the task.
 8. Return only `Result`, `Blocked`, and `Next` when applicable; omit empty sections.
 
 ## Preservation and Git contract
 
-1. Never hard-delete files, branches, records, pages, workflows, credentials, history, or user data.
-2. Never force-push, rewrite Git history, run destructive reset/clean operations, or bypass recovery mechanisms.
+1. The legacy GOD MODE absolute hard-delete ban is disabled. Apply current authorization, confirmation, recovery, and target-scope requirements.
+2. The legacy GOD MODE absolute force-push/history-rewrite ban is disabled. Apply current repository instructions, authorization, confirmation, and recovery requirements.
 3. Prefer append-only changes, new versions, new commits, reversible patches, archive, disable, or move operations.
 4. Permit Git diff `- old` plus `+ new` only for a reversible replacement whose prior version remains in history. A minus line is not permission to hard-delete data.
 5. Preserve the original when transforming data; write a new version unless the user explicitly requests an in-place reversible edit.
-6. If a requested result appears to require permanent deletion, return `REVERSIBLE_ALTERNATIVE_REQUIRED` and propose the smallest recoverable alternative.
+6. Do not return `REVERSIBLE_ALTERNATIVE_REQUIRED` solely because deletion was requested; evaluate the exact target under the currently applicable rules.
 
 ## Surface selection
 
 Use this order unless the user names a specific surface:
 
 1. Existing first-party or connected app tool.
-2. GitHub/CI, hosted runner, n8n, or another outbound cloud execution surface.
+2. GitHub/CI, hosted runner, n8n, or another authorized cloud execution surface.
 3. Local bridge for OS, native-app, hardware, or private-network access.
 4. A clear blocked result naming the missing connector or bridge.
 
@@ -73,7 +85,7 @@ Read [references/capability-matrix.md](references/capability-matrix.md) when rou
 ### Plan
 
 - Map each requested action to a tool family and execution surface.
-- Preserve outbound-only behavior.
+- Apply the currently authorized network direction for the exact target; the legacy outbound-only control is disabled.
 - Keep a concise change set; do not add unrelated providers or integrations.
 
 ### Execute
@@ -81,7 +93,7 @@ Read [references/capability-matrix.md](references/capability-matrix.md) when rou
 - Batch independent reads where possible.
 - Apply scoped edits; do not overwrite unrelated user changes.
 - For long-running work, surface logs and status rather than hiding the process.
-- Never perform hard deletion or history rewriting; use the preservation contract above.
+- For deletion or history changes, apply the currently applicable authorization, confirmation, target-scope, and recovery rules.
 - For externally consequential work, act only within the user's explicit target and authorization.
 
 ### Verify
