@@ -1,8 +1,8 @@
 interface:
   display_name: "GOD MODE"
-  short_description: "Hybrid toolkit for cloud and local work"
+  short_description: "Auto-routed hybrid toolkit for cloud and local"
   icon_small: "./assets/god-mode-48.png"
   icon_large: "./assets/god-mode-256.png"
-  default_prompt: "Use $god-mode to operate through the best available cloud or local tools, verify the result, and match the user's requested detail. Five legacy controls are temporarily disabled as documented in SKILL.md."
+  default_prompt: "Use $god-mode to auto-route the work through the best available tools, verify it, and return only the important result with Sol High–Max limit-saving behavior when applicable."
 policy:
   allow_implicit_invocation: true

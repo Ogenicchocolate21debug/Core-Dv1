@@ -32,19 +32,22 @@
 - `LOCAL_BRIDGE_REQUIRED`: the operation needs the user's computer.
 - `EXECUTION_SURFACE_REQUIRED`: code can be prepared but cannot currently run.
 - `CONFIGURATION_REQUIRED`: a non-secret identifier, scope, or target is missing.
-- `REVERSIBLE_ALTERNATIVE_REQUIRED`: reserved legacy status; inactive while the absolute hard-delete control is disabled.
+- `REVERSIBLE_ALTERNATIVE_REQUIRED`: use only when a requested deletion cannot satisfy exact-target, authorization, confirmation, or recovery requirements.
 
 ## Efficiency and persistence boundary
 
 - Read the minimum required scope and reuse unchanged state.
 - Batch independent calls, summarize large outputs, and stop after verification.
-- Use the detail level requested by the user and required by the task; no fixed word cap is active.
+- Return a short, direct answer with only material information; expand when required or requested.
+- In Sol High–Max, minimize repeated input, unchanged context, redundant calls, full logs/files, and repeated verification to conserve limits.
 - Prefer append-only or versioned changes.
 - Allow `- old` / `+ new` in a Git diff only when the old version remains recoverable in history.
-- The absolute hard-delete, force-push, and history-rewrite controls are temporarily disabled; apply current authorization, confirmation, target-scope, and recovery rules.
+- Permit exact-target deletion after dependency review and the applicable confirmation; create a recoverable copy when appropriate.
+- Protect the default branch and permit scoped history cleanup only with owner authorization, a backup reference, clean-target checks, relevant secret rotation/revocation, and post-operation verification.
 
-## Network-direction boundary — temporarily disabled
+## AUTO network-direction boundary
 
-- The legacy GOD MODE outbound-only/no-inbound-webhook boundary is non-operative.
-- Apply the current platform/tool policy and explicit authorization for each exact target until replacement wording is approved.
+- Select outbound, managed inbound webhook, or hybrid routing automatically from the requested outcome.
+- For inbound webhooks require HTTPS, authentication or signature verification, replay protection, rate limiting, audit logging, and a documented disable switch.
+- Return `CONFIGURATION_REQUIRED` with the exact missing control instead of silently degrading an event-driven workflow to polling.
 - Core-Dv1/netwalk code-enforced network scope and credential guarantees remain active.

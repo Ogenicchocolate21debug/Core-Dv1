@@ -1,8 +1,8 @@
 {
   "name": "GOD MODE",
   "slug": "god-mode",
-  "version": "1.1.1",
-  "type": "hybrid",
+  "version": "1.2.0",
+  "type": "auto-routed-hybrid",
   "modes": ["cloud", "local", "hybrid"],
   "source": {
     "repository": "https://github.com/Ogenicchocolate21debug/Core-Dv1",
@@ -33,33 +33,38 @@
     "EXECUTION_SURFACE_REQUIRED",
     "CONFIGURATION_REQUIRED"
   ],
-  "temporarily_disabled_controls": [
-    "outbound-only-no-inbound-webhook",
-    "absolute-hard-delete-ban",
-    "absolute-secret-placement-ban",
-    "fixed-120-word-final-limit",
-    "absolute-force-push-history-rewrite-ban"
-  ],
   "efficiency": {
     "default_max_final_words": null,
-    "fixed_word_limit_enabled": false,
+    "response_style": "concise-essential",
+    "sol_high_max_limit_saver": true,
     "reuse_unchanged_state": true,
     "batch_independent_calls": true,
     "stop_after_verification": true
   },
   "persistence": {
-    "absolute_hard_delete_ban_enabled": false,
-    "absolute_force_push_ban_enabled": false,
-    "absolute_rewrite_history_ban_enabled": false,
+    "exact_target_deletion_enabled": true,
+    "dependency_preview_required": true,
+    "recoverable_copy_when_appropriate": true,
+    "controlled_history_cleanup_enabled": true,
+    "default_branch_protected": true,
     "default_strategy": "append-or-version"
   },
   "network_policy": {
-    "outbound_only_enabled": false,
-    "no_inbound_webhook_enabled": false,
-    "replacement_status": "OWNER_APPROVAL_REQUIRED"
+    "direction": "auto",
+    "managed_inbound_webhook_enabled": true,
+    "required_controls": [
+      "https",
+      "authentication-or-signature",
+      "replay-protection",
+      "rate-limit",
+      "audit-log",
+      "disable-switch"
+    ]
   },
   "secret_policy": {
-    "absolute_placement_ban_enabled": false,
-    "replacement_status": "OWNER_APPROVAL_REQUIRED"
+    "metadata_and_placeholders_in_docs": true,
+    "actual_values_route": "approved-credential-ui-or-secret-manager",
+    "rotation_and_revocation_enabled": true,
+    "archive_live_secret_values": false
   }
 }
