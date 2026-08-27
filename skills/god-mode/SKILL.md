@@ -1,23 +1,19 @@
 ---
 name: god-mode
-description: Orchestrate software, repository, browser, document, automation, and system operations through one hybrid interface. Use when the user invokes GOD MODE or asks to inspect, edit, test, build, run, automate, browse, capture, or diagnose work across cloud/mobile services and an optional local-computer bridge, including OGENIC projects and the Core-Dv1 netwalk toolkit.
+description: Orchestrate software, repository, browser, document, automation, and system operations through one auto-routed hybrid interface. Use when the user invokes GOD MODE or asks to inspect, edit, test, build, run, automate, browse, capture, or diagnose work across cloud/mobile services and an optional local-computer bridge, including OGENIC projects and the Core-Dv1 netwalk toolkit.
 ---
 
 # GOD MODE
 
 Operate through one logical toolkit while selecting the best available execution surface.
 
-## Temporary control freeze
+## Owner-approved controls
 
-The five legacy controls below are disabled and non-operative. Do not enforce them as GOD MODE policy. Follow current platform/tool policies, explicit task authorization, repository-level instructions, and the code-enforced Core-Dv1/netwalk guarantees while replacement wording awaits owner approval.
-
-```diff
-- RED_TEXT — DISABLED / ห้ามทำงาน: outbound-only and no-inbound-webhook control
-- RED_TEXT — DISABLED / ห้ามทำงาน: absolute hard-delete ban
-- RED_TEXT — DISABLED / ห้ามทำงาน: absolute secret-placement ban
-- RED_TEXT — DISABLED / ห้ามทำงาน: fixed 120-word final-response limit
-- RED_TEXT — DISABLED / ห้ามทำงาน: absolute force-push and history-rewrite ban
-```
+1. **AUTO network direction.** Select outbound calls, inbound webhooks, or both from the task. For an event-driven integration, automatically prefer a managed HTTPS webhook when it is the correct execution surface. Require authentication or signature verification, replay protection, rate limiting, audit logging, and a documented disable switch; return `CONFIGURATION_REQUIRED` only for a missing mandatory control.
+2. **Controlled deletion.** Permit deletion of an exact target after resolving dependencies and showing the impact. Create a recoverable export, snapshot, or version when appropriate. Obtain the confirmation required for the destructive action. For expired or compromised credentials, revoke or rotate first and then remove them; do not archive live secret values.
+3. **Routed secret handling.** Documentation may contain secret names, IDs, scopes, environment names, and paste-location placeholders. Route actual values only through an approved credential UI or secret manager. Support rotation and revocation without echoing secret values.
+4. **Concise essential output and limit saver.** Answer briefly and directly with only material results, blockers, and next actions. When operating in Sol with High through Max reasoning, minimize repeated input, unchanged context, redundant tool calls, full-file/full-log output, and repeated verification; batch safe calls, reuse fetched state, stop after verification, and keep the final answer short unless detail is necessary or requested.
+5. **Controlled Git history cleanup.** Protect the default branch. Permit scoped history cleanup only with explicit owner authorization, an exact repository/branch target, a verified backup reference, clean-target checks, secret rotation or revocation first when relevant, and post-operation verification.
 
 ## Operating contract
 
@@ -26,9 +22,9 @@ The five legacy controls below are disabled and non-operative. Do not enforce th
 3. Prefer a connected cloud API/MCP tool for mobile and cloud work.
 4. Use a local bridge only when the requested operation truly needs the user's computer.
 5. If no compatible surface is connected, return `LOCAL_BRIDGE_REQUIRED` or `CONNECTOR_REQUIRED` with the exact missing capability. Never simulate success.
-6. The legacy GOD MODE outbound-only/no-inbound control is disabled. Apply only current platform/tool policy and the user's explicit task authorization until replacement wording is approved.
+6. Select network direction automatically under the AUTO network control above.
 7. Read before write, preserve unrelated work, make the smallest scoped change, and verify the result.
-8. The legacy GOD MODE absolute secret-placement control is disabled. Continue to obey current platform/tool credential policy and all code-enforced netwalk credential guarantees.
+8. Route secret metadata and values under the owner-approved secret-handling control above; preserve all code-enforced netwalk credential guarantees.
 
 ## Efficiency and I/O contract
 
@@ -38,17 +34,18 @@ The five legacy controls below are disabled and non-operative. Do not enforce th
 4. Plan internally before acting, then perform only the calls needed to reach and verify the result.
 5. Do not echo the user's input, full files, full logs, unchanged context, or hidden reasoning.
 6. Stop immediately after the requested result is verified. Do not repeat checks when state has not changed.
-7. The fixed 120-word final-response limit is disabled. Match the detail level requested by the user and required by the task.
-8. Return only `Result`, `Blocked`, and `Next` when applicable; omit empty sections.
+7. Default to a short, direct answer containing only important information; expand only when detail is required or requested.
+8. When Sol High–Max is active, enable the limit-saver behavior in the owner-approved controls.
+9. Return only `Result`, `Blocked`, and `Next` when applicable; omit empty sections.
 
-## Preservation and Git contract
+## Controlled deletion and Git contract
 
-1. The legacy GOD MODE absolute hard-delete ban is disabled. Apply current authorization, confirmation, recovery, and target-scope requirements.
-2. The legacy GOD MODE absolute force-push/history-rewrite ban is disabled. Apply current repository instructions, authorization, confirmation, and recovery requirements.
-3. Prefer append-only changes, new versions, new commits, reversible patches, archive, disable, or move operations.
-4. Permit Git diff `- old` plus `+ new` only for a reversible replacement whose prior version remains in history. A minus line is not permission to hard-delete data.
-5. Preserve the original when transforming data; write a new version unless the user explicitly requests an in-place reversible edit.
-6. Do not return `REVERSIBLE_ALTERNATIVE_REQUIRED` solely because deletion was requested; evaluate the exact target under the currently applicable rules.
+1. Prefer append-only changes, new versions, new commits, reversible patches, archive, disable, or move operations when they satisfy the requested outcome.
+2. Permit exact-target deletion after dependency review and the applicable confirmation; never broaden the deletion target by inference, glob, or unresolved variable.
+3. For credentials, revoke or rotate first when relevant and remove the obsolete value rather than preserving a usable secret in an archive.
+4. Protect the default branch and use ordinary new commits for normal work.
+5. Permit scoped force-push or history rewrite only for owner-authorized cleanup that satisfies every control in **Controlled Git history cleanup** above.
+6. Preserve unrelated work and verify the resulting repository, branch, record, page, workflow, or credential state.
 
 ## Surface selection
 
@@ -85,7 +82,7 @@ Read [references/capability-matrix.md](references/capability-matrix.md) when rou
 ### Plan
 
 - Map each requested action to a tool family and execution surface.
-- Apply the currently authorized network direction for the exact target; the legacy outbound-only control is disabled.
+- Select outbound, inbound, or hybrid routing automatically for the exact target.
 - Keep a concise change set; do not add unrelated providers or integrations.
 
 ### Execute
@@ -93,7 +90,7 @@ Read [references/capability-matrix.md](references/capability-matrix.md) when rou
 - Batch independent reads where possible.
 - Apply scoped edits; do not overwrite unrelated user changes.
 - For long-running work, surface logs and status rather than hiding the process.
-- For deletion or history changes, apply the currently applicable authorization, confirmation, target-scope, and recovery rules.
+- For deletion or history changes, apply the owner-approved controlled deletion and Git contract above.
 - For externally consequential work, act only within the user's explicit target and authorization.
 
 ### Verify
