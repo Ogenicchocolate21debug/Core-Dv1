@@ -1,0 +1,44 @@
+{
+  "schema_version": "1.0",
+  "system": "OGENIC CORE HARNESS",
+  "profile": "AUSTRA v6",
+  "principle": "One interface, many capabilities",
+  "permission_classes": ["READ", "WRITE", "EXECUTE", "DANGEROUS"],
+  "planes": {
+    "architecture": ["solution_architecture", "api_design", "mcp_contract", "policy_gate"],
+    "knowledge": ["rag_search", "context_load", "notion_read", "notion_write", "project_handoff"],
+    "development": ["code_search", "read_file", "write_file", "git_diff", "git_commit", "test", "lint", "build"],
+    "x_execution": ["tool_discover", "repo_map", "process_run", "workflow_run", "deploy_preview", "verify_runtime"],
+    "y_identity": ["identity_health", "session_health", "capability_resolve", "credential_reference", "reauth_required"],
+    "z_convergence": ["discover_state", "snapshot", "hash", "diff", "reconcile", "rollback", "audit"],
+    "data": ["drive_scan", "asset_index", "manifest_build", "data_validate"],
+    "observability": ["logs", "traces", "metrics", "incident_report"],
+    "agents": ["agent_register", "agent_handoff", "agent_capability_map"],
+    "business": ["cn_scan", "cn_build", "cn_preview", "cn_verify", "connector_provision"]
+  },
+  "aliases": {
+    "/OG.help": "show_command_map",
+    "/OG.status": "system_health",
+    "/OG.tools": "tool_discover",
+    "/OG.context": "context_load",
+    "/OG.sync": "reconcile",
+    "/OG.audit": "audit",
+    "/X.tools": "tool_discover",
+    "/Y.health": "session_health",
+    "/Z.reconcile": "reconcile",
+    "/CN.scan": "cn_scan",
+    "/CN.diff": "diff",
+    "/CN.build": "cn_build",
+    "/CN.preview": "cn_preview",
+    "/CN.verify": "cn_verify"
+  },
+  "routing_rules": [
+    "Prefer deterministic execution over repeated model reasoning",
+    "Discover capability before selecting a concrete tool",
+    "READ before WRITE",
+    "Use smallest reversible change",
+    "Preview and verify before production",
+    "Never expose raw secrets",
+    "If capability is missing, return CAPABILITY_REQUIRED and continue independent work"
+  ]
+}
