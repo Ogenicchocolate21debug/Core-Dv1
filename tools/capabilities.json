@@ -14,7 +14,7 @@
     "data": ["drive_scan", "asset_index", "manifest_build", "data_validate"],
     "observability": ["logs", "traces", "metrics", "incident_report"],
     "agents": ["agent_register", "agent_handoff", "agent_capability_map"],
-    "business": ["cn_scan", "cn_build", "cn_preview", "cn_verify", "connector_provision"]
+    "business": ["cn_scan", "cn_build", "cn_preview", "cn_verify", "cn_promote", "connector_provision"]
   },
   "aliases": {
     "/OG.help": "show_command_map",
@@ -30,7 +30,8 @@
     "/CN.diff": "diff",
     "/CN.build": "cn_build",
     "/CN.preview": "cn_preview",
-    "/CN.verify": "cn_verify"
+    "/CN.verify": "cn_verify",
+    "/CN.promote": "cn_promote"
   },
   "routing_rules": [
     "Prefer deterministic execution over repeated model reasoning",
@@ -38,6 +39,7 @@
     "READ before WRITE",
     "Use smallest reversible change",
     "Preview and verify before production",
+    "Production promotion requires explicit approval",
     "Never expose raw secrets",
     "If capability is missing, return CAPABILITY_REQUIRED and continue independent work"
   ]
