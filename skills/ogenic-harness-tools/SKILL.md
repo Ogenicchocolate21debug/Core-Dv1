@@ -51,6 +51,7 @@ Normal Chat is the preferred Operator Console whenever connected capabilities ca
 - `/CN.build`
 - `/CN.preview`
 - `/CN.verify`
+- `/CN.promote` — production promotion only after explicit approval and successful preview/verification gates
 
 ## Agent Handoff
 Every agent should receive this skill plus `tools/capabilities.json`. The agent must discover actual tool access at runtime rather than assuming connectors are present.
