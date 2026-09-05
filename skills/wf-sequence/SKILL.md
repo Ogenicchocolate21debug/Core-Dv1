@@ -29,9 +29,10 @@ This is a deterministic runbook, not a conversational suggestion and not depende
 3. Never fabricate a product photo, Thai name, English name, Japanese name, price, category, or ordering position.
 4. Google Drive is the source/sync layer. Browser preview and Cloudflare production must use repository-local assets, not private Drive thumbnail URLs.
 5. A4 must contain exactly 14 canonical categories in order `01 → 14`. Extra legacy folders are excluded and reported; they are not silently rendered.
-6. Build a preview before publish.
-7. Run repository validation before Cloudflare build/deploy. Missing required A1–A6 content blocks publish.
-8. Do not require Work mode. Use any available Agent/API/MCP/GitHub execution surface that can complete the same deterministic steps.
+6. Distinguish product/data records from media files. A record may legitimately have no dedicated image or translated field when the canonical source does not provide one.
+7. Build a preview before publish.
+8. Run repository validation before Cloudflare build/deploy. Missing required A1–A6 content blocks publish.
+9. Do not require Work mode. Use any available Agent/API/MCP/GitHub execution surface that can complete the same deterministic steps.
 
 ## Step contract
 
@@ -44,14 +45,13 @@ This is a deterministic runbook, not a conversational suggestion and not depende
 
 ### A2 — Second Row, 4 Images
 
-- Read A2 source.
-- Sync four images.
-- Runtime order must be:
-  1. `assets/website/row2-1.png`
-  2. `assets/website/row2-2.png`
-  3. `assets/website/row2-3.png`
-  4. `assets/website/row2-4.png`
-- Never reverse the order based on directory listing or upload time.
+- Read A2 source and order by the canonical content labels `Figure 1 → Figure 2 → Figure 3 → Figure 4`, never by upload time or filename alone.
+- Current repository filenames are not numerically aligned with content labels. Canonical runtime content order is:
+  1. Figure 1 → `assets/website/row2-1.png`
+  2. Figure 2 → `assets/website/row2-4.png`
+  3. Figure 3 → `assets/website/row2-3.png`
+  4. Figure 4 → `assets/website/row2-2.png`
+- If assets are later renamed, preserve Figure 1→4 content order in the manifest.
 
 ### A3 — PhotoStory & TextStory
 
@@ -62,18 +62,23 @@ This is a deterministic runbook, not a conversational suggestion and not depende
 
 ### A4 — Product Catalog
 
-Required fields per product record:
+Canonical model:
 
-`photo + name_th + name_en + name_ja + price`
+- exactly 14 category sections;
+- exactly 135 product/data records from the current Product Database source;
+- exactly 100 canonical media mappings in the current source model;
+- preserve source-provided TH/EN/JA/price values without inventing missing values.
 
 Rules:
 
 - Read Product Database document as source of truth.
 - Render exactly 14 category sections in canonical order.
-- Preserve item order inside each category.
+- Preserve record order inside each category.
 - Category navigation/menu must visibly separate all 14 categories.
+- Do not treat every data record as requiring a dedicated photo. Category 13 contains sizes, sets, rules and toppings in addition to 13 noodle-package media items.
+- Do not infer English/Japanese translations for source records where those fields are absent.
 - Product cards must not be generated from guesses or legacy Shopify data when the canonical database supplies a value.
-- If media and database record counts differ, report the exact category and block production when a required record cannot be rendered.
+- Validate record count and media count separately. Report the exact category when either canonical count/mapping is incomplete.
 
 Canonical categories:
 
